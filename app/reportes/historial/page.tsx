@@ -164,7 +164,7 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
             <div style={{ border: "1px solid #0066cc", padding: 3, borderRadius: 4, background: "#fff", display: "inline-block", flexShrink: 0 }}>
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(
-                  `https://tecsur.edu.pe/api/reportes/historial/pdf?token=${token || Buffer.from(`TS-${dni}`).toString('base64')}`
+                  `https://tecsur.vercel.app/consulta`
                 )}`}
                 alt="QR Verificación"
                 style={{ width: 70, height: 70, display: "block" }}
