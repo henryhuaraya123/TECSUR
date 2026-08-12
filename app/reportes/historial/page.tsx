@@ -97,9 +97,10 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
           box-shadow: 0 10px 25px rgba(0,0,0,0.08);
           border: 1px solid #d1d5db;
         }
+        @page { margin: 0; }
         @media print {
-          body { background: #fff; }
-          .a4-container { margin: 0; box-shadow: none; width: 100%; min-height: auto; padding: 5mm; border: none; }
+          body { background: #fff; margin: 0; }
+          .a4-container { margin: 0; box-shadow: none; width: 100%; min-height: auto; padding: 10mm 15mm !important; border: none; }
           .no-print { display: none !important; }
         }
         

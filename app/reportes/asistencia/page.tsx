@@ -45,7 +45,7 @@ export default async function ReporteAsistenciaPage({ searchParams }: { searchPa
     .from("asistencias")
     .select("fecha")
     .eq("modulo_id", matricula.modulo_id);
-    
+
   const fechasUnicas = Array.from(new Set((fechasModulo || []).map(f => f.fecha))).sort();
 
   // Filtrar fechas que sean desde la fecha de inicio hasta hoy
@@ -76,7 +76,8 @@ export default async function ReporteAsistenciaPage({ searchParams }: { searchPa
   return (
     <>
       <title>{`${matricula.alumnos.apellidos}_${matricula.alumnos.nombres}_ReporteAsistencia_${matricula.alumnos.codigo || matricula.alumnos.dni}`.toUpperCase().replace(/\s+/g, "_")}</title>
-      <style dangerouslySetInnerHTML={{__html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         body { margin: 0; padding: 0; background: #e5e7eb; font-family: 'Inter', system-ui, sans-serif; color: #111827; }
         .a4-container {
           background: #fff;
@@ -87,9 +88,10 @@ export default async function ReporteAsistenciaPage({ searchParams }: { searchPa
           box-sizing: border-box;
           box-shadow: 0 10px 25px rgba(0,0,0,0.1);
         }
+        @page { margin: 0; }
         @media print {
-          body { background: #fff; }
-          .a4-container { margin: 0; box-shadow: none; width: 100%; min-height: auto; padding: 0; }
+          body { background: #fff; margin: 0; }
+          .a4-container { margin: 0; box-shadow: none; width: 100%; min-height: auto; padding: 10mm 15mm !important; }
           .no-print { display: none !important; }
         }
         h1, h2, h3, h4, p { margin: 0; }
@@ -116,7 +118,7 @@ export default async function ReporteAsistenciaPage({ searchParams }: { searchPa
       `}} />
 
       <div className="no-print" style={{ textAlign: "center", padding: "20px 0" }}>
-        <button 
+        <button
           style={{ background: "#2563eb", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, boxShadow: "0 4px 6px -1px rgba(37,99,235,0.2)" }}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
@@ -140,7 +142,7 @@ export default async function ReporteAsistenciaPage({ searchParams }: { searchPa
             <h3 style={{ fontSize: 16, fontWeight: 800, color: "#1f2937", marginBottom: 20, borderBottom: "2px solid #e5e7eb", paddingBottom: 10 }}>Datos del Alumno</h3>
             <div className="info-label">Apellidos y Nombres</div>
             <div className="info-value">{matricula.alumnos.apellidos}, {matricula.alumnos.nombres}</div>
-            
+
             <div className="flex-row">
               <div>
                 <div className="info-label">DNI</div>
@@ -159,7 +161,7 @@ export default async function ReporteAsistenciaPage({ searchParams }: { searchPa
 
           <div className="info-box">
             <h3 style={{ fontSize: 16, fontWeight: 800, color: "#1f2937", marginBottom: 20, borderBottom: "2px solid #e5e7eb", paddingBottom: 10 }}>Datos del Módulo</h3>
-            
+
             <div className="flex-row" style={{ marginTop: 0 }}>
               <div>
                 <div className="info-label">Módulo / Máquina</div>
@@ -201,7 +203,7 @@ export default async function ReporteAsistenciaPage({ searchParams }: { searchPa
         </div>
 
         <h3 style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginBottom: 12, marginTop: 10 }}>Registro Detallado</h3>
-        
+
         {listaAsistencias.length === 0 ? (
           <p style={{ padding: 30, textAlign: "center", color: "#6b7280", background: "#f9fafb", border: "1px dashed #d1d5db", borderRadius: 8 }}>
             No hay registros de asistencia para este alumno en este módulo.
@@ -264,9 +266,10 @@ export default async function ReporteAsistenciaPage({ searchParams }: { searchPa
           </div>
         </div>
       </div>
-      
+
       {/* Client Component para el botón de imprimir */}
-      <script dangerouslySetInnerHTML={{__html: `
+      <script dangerouslySetInnerHTML={{
+        __html: `
         document.querySelector('button').addEventListener('click', function() {
           window.print();
         });

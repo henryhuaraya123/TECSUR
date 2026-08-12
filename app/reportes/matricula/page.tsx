@@ -45,7 +45,8 @@ export default async function ReporteMatriculaPage({ searchParams }: { searchPar
   return (
     <>
       <title>{`${matricula.alumnos.apellidos}_${matricula.alumnos.nombres}_ConstanciaMatricula_${matricula.alumnos.codigo || matricula.alumnos.dni}`.toUpperCase().replace(/\s+/g, "_")}</title>
-      <style dangerouslySetInnerHTML={{__html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         body { margin: 0; padding: 0; background: #e5e7eb; font-family: 'Inter', system-ui, sans-serif; color: #111827; }
         .a4-container {
           background: #fff;
@@ -56,9 +57,10 @@ export default async function ReporteMatriculaPage({ searchParams }: { searchPar
           box-sizing: border-box;
           box-shadow: 0 10px 25px rgba(0,0,0,0.1);
         }
+        @page { margin: 0; }
         @media print {
-          body { background: #fff; }
-          .a4-container { margin: 0; box-shadow: none; width: 100%; min-height: auto; padding: 0; }
+          body { background: #fff; margin: 0; }
+          .a4-container { margin: 0; box-shadow: none; width: 100%; min-height: auto; padding: 10mm 15mm !important; }
           .no-print { display: none !important; }
         }
         h1, h2, h3, h4, p { margin: 0; }
@@ -82,7 +84,7 @@ export default async function ReporteMatriculaPage({ searchParams }: { searchPar
       `}} />
 
       <div className="no-print" style={{ textAlign: "center", padding: "20px 0" }}>
-        <button 
+        <button
           style={{ background: "#2563eb", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, boxShadow: "0 4px 6px -1px rgba(37,99,235,0.2)" }}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
@@ -102,12 +104,12 @@ export default async function ReporteMatriculaPage({ searchParams }: { searchPar
               <p style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, marginTop: 4 }}>CÓD: {matricula.id.split("-")[0].toUpperCase()}</p>
             </div>
             <div style={{ border: "1px solid #d1d5db", padding: 4, borderRadius: 6, background: "#fff", display: "inline-block", flexShrink: 0 }}>
-              <img 
+              <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=85x85&data=${encodeURIComponent(
                   `TECSUR Constancia Matrícula\nEstudiante: ${matricula.alumnos.apellidos}, ${matricula.alumnos.nombres}\nDNI: ${matricula.alumnos.dni}\nMódulo: ${matricula.modulos.nombre}\nCódigo: ${matricula.id}`
-                )}`} 
-                alt="QR Verificación" 
-                style={{ width: 85, height: 85, display: "block" }} 
+                )}`}
+                alt="QR Verificación"
+                style={{ width: 85, height: 85, display: "block" }}
               />
             </div>
           </div>
@@ -173,7 +175,7 @@ export default async function ReporteMatriculaPage({ searchParams }: { searchPar
           <div style={{ marginTop: 40, padding: 15, background: "#f9fafb", border: "1px solid #d1d5db", borderRadius: 8 }}>
             <h4 style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "#374151" }}>DECLARACIÓN Y COMPROMISO</h4>
             <p style={{ fontSize: 11, color: "#4b5563", lineHeight: 1.5 }}>
-              El estudiante declara conocer y aceptar el reglamento interno, así como los términos y condiciones académicos y económicos del Instituto TECSUR. 
+              El estudiante declara conocer y aceptar el reglamento interno, así como los términos y condiciones académicos y económicos del Instituto TECSUR.
               La presente matrícula queda sujeta a la validación de los requisitos de admisión y pago de los derechos correspondientes.
             </p>
           </div>
@@ -193,8 +195,9 @@ export default async function ReporteMatriculaPage({ searchParams }: { searchPar
 
         </div>
       </div>
-      
-      <script dangerouslySetInnerHTML={{__html: `
+
+      <script dangerouslySetInnerHTML={{
+        __html: `
         document.querySelector('button').addEventListener('click', function() {
           window.print();
         });

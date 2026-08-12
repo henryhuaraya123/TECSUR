@@ -159,9 +159,10 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
           position: relative;
         }
         
+        @page { margin: 0; }
         @media print {
-          body { background: #fff; }
-          .a4-container { margin: 0; box-shadow: none; width: 100%; min-height: auto; padding: 5mm 8mm; }
+          body { background: #fff; margin: 0; }
+          .a4-container { margin: 0; box-shadow: none; width: 100%; min-height: auto; padding: 10mm 15mm !important; }
           .no-print { display: none !important; }
         }
 
@@ -463,15 +464,15 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
         {/* Bloque 1: Datos de Matrícula */}
         <div className="field-grid">
           <div className="field-row">
-            <div className="field-cell" style={{ width: "16%" }}>
+            <div className="field-cell" style={{ width: "22%" }}>
               <span className="field-label">Fecha:</span>
               <span className="field-value">{formatDate(fechaRegistro)}</span>
             </div>
-            <div className="field-cell" style={{ width: "54%" }}>
+            <div className="field-cell" style={{ width: "53%" }}>
               <span className="field-label">Especialización:</span>
               <span className="field-value">{carrera}</span>
             </div>
-            <div className="field-cell" style={{ width: "30%" }}>
+            <div className="field-cell" style={{ width: "25%" }}>
               <span className="field-label">Duración:</span>
               <span className="field-value">{duracion}</span>
             </div>
@@ -500,36 +501,38 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
         <div className="section-bar">Datos Personales</div>
         <div className="field-grid">
           <div className="field-row">
-            <div className="field-cell" style={{ width: "46%" }}>
+            <div className="field-cell" style={{ width: "100%" }}>
               <span className="field-label">Apellidos y Nombres:</span>
               <span className="field-value" style={{ fontWeight: 700 }}>
                 {alumno.apellidos}, {alumno.nombres}
               </span>
             </div>
-            <div className="field-cell" style={{ width: "26%" }}>
+          </div>
+          <div className="field-row">
+            <div className="field-cell" style={{ width: "40%" }}>
               <span className="field-label">Fec. Nac:</span>
               <span className="field-value">{formatDate(alumno.fecha_nacimiento)}</span>
             </div>
-            <div className="field-cell" style={{ width: "18%" }}>
+            <div className="field-cell" style={{ width: "35%" }}>
               <span className="field-label">DNI:</span>
               <span className="field-value">{alumno.dni}</span>
             </div>
-            <div className="field-cell" style={{ width: "10%" }}>
+            <div className="field-cell" style={{ width: "25%" }}>
               <span className="field-label">Edad:</span>
               <span className="field-value">{calculateAge(alumno.fecha_nacimiento)}</span>
             </div>
           </div>
 
           <div className="field-row">
-            <div className="field-cell" style={{ width: "46%" }}>
+            <div className="field-cell" style={{ width: "40%" }}>
               <span className="field-label">Nac. Distrito:</span>
               <span className="field-value">{alumno.nac_distrito || "—"}</span>
             </div>
-            <div className="field-cell" style={{ width: "27%" }}>
+            <div className="field-cell" style={{ width: "35%" }}>
               <span className="field-label">Provincia:</span>
               <span className="field-value">{alumno.nac_provincia || "—"}</span>
             </div>
-            <div className="field-cell" style={{ width: "27%" }}>
+            <div className="field-cell" style={{ width: "25%" }}>
               <span className="field-label">Departamento:</span>
               <span className="field-value">{alumno.nac_departamento || "—"}</span>
             </div>

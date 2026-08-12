@@ -64,7 +64,7 @@ export default async function ReporteCursoPage({
 
   const fechasSet = new Set<string>();
   const asistenciaMap: Record<string, Record<string, string>> = {}; // matriculaId -> { fecha -> estado }
-  
+
   (asistencias || []).forEach(a => {
     fechasSet.add(a.fecha);
     if (!asistenciaMap[a.matricula_id]) asistenciaMap[a.matricula_id] = {};
@@ -75,8 +75,9 @@ export default async function ReporteCursoPage({
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{__html: `
-        @page { size: A4 landscape; margin: 10mm; }
+      <style dangerouslySetInnerHTML={{
+        __html: `
+        @page { size: A4 landscape; margin: 0; }
         body { margin: 0; padding: 0; font-family: 'Arial', sans-serif; font-size: 10px; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: #fff !important; }
         .full-screen-wrapper { background: #fff; min-height: 100vh; padding: 20px; width: 100%; box-sizing: border-box; position: absolute; top: 0; left: 0; z-index: 50; }
         .page-container { width: 100%; background: #fff; }
@@ -100,15 +101,15 @@ export default async function ReporteCursoPage({
         .header-section td { text-transform: uppercase; }
         
         @media print {
-          body { background: #fff; }
+          body { background: #fff; margin: 0; }
           .full-screen-wrapper { padding: 0; position: static; }
-          .page-container { margin: 0; max-width: 100%; }
+          .page-container { margin: 0; max-width: 100%; padding: 10mm; box-sizing: border-box; }
           .no-print { display: none !important; }
         }
       `}} />
- 
+
       <div className="no-print" style={{ textAlign: "center", padding: "10px 0", background: "#f3f4f6", borderBottom: "1px solid #d1d5db" }}>
-        <button 
+        <button
           id="btnPrint"
           style={{ background: "#2563eb", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, boxShadow: "0 4px 6px -1px rgba(37,99,235,0.2)" }}
         >
@@ -126,7 +127,7 @@ export default async function ReporteCursoPage({
             <div className="header-title">REGISTRO DE NOTAS Y ASISTENCIA DEL CURSO</div>
             <div style={{ width: 150, textAlign: "right" }}></div>
           </div>
-  
+
           <table className="main-table" style={{ marginBottom: 0, borderBottom: "none" }}>
             <tbody className="header-section">
               <tr>
@@ -155,7 +156,7 @@ export default async function ReporteCursoPage({
               </tr>
             </tbody>
           </table>
-  
+
           <table className="matrix-table" style={{ borderTop: "none" }}>
             <colgroup>
               <col style={{ width: "3%" }} />
@@ -171,7 +172,7 @@ export default async function ReporteCursoPage({
               <col style={{ width: "5%" }} />
               <col style={{ width: "8%" }} />
             </colgroup>
-  
+
             {/* SECTION: MATRIX HEADERS */}
             <thead>
               <tr>
@@ -181,7 +182,7 @@ export default async function ReporteCursoPage({
                 <th rowSpan={2} className="bg-yellow text-center" style={{ fontSize: 9 }}>ESTADO</th>
                 <th rowSpan={2} className="bg-gray text-center">N°</th>
                 <th colSpan={fechasValidas.length || 1} className="bg-blue text-center">CONTROL DE ASISTENCIA</th>
-                <th rowSpan={2} className="bg-gray text-center" style={{ fontSize: 8 }}>TOTAL<br/>INASIS.</th>
+                <th rowSpan={2} className="bg-gray text-center" style={{ fontSize: 8 }}>TOTAL<br />INASIS.</th>
                 <th rowSpan={2} className="bg-gray text-center">OBSERV.</th>
               </tr>
               <tr>
@@ -198,7 +199,7 @@ export default async function ReporteCursoPage({
                 )}
               </tr>
             </thead>
-  
+
             {/* SECTION: DATA ROWS */}
             <tbody>
               {listaMatriculas.length === 0 ? (
@@ -209,14 +210,14 @@ export default async function ReporteCursoPage({
                   const nota = notasMap[m.id];
                   const approved = nota !== undefined && nota >= 14;
                   const hasNota = nota !== undefined;
-                  
+
                   // Inasistencias
                   let faltas = 0;
                   fechasValidas.forEach(f => {
                     const est = asistenciaMap[m.id]?.[f];
                     if (est === "falta") faltas++;
                   });
-  
+
                   return (
                     <tr key={m.id}>
                       <td className="text-center">{idx + 1}</td>
@@ -256,7 +257,7 @@ export default async function ReporteCursoPage({
               )}
             </tbody>
           </table>
-  
+
           <div style={{ marginTop: 60, display: "flex", justifyContent: "space-around" }}>
             <div style={{ textAlign: "center" }}>
               <div style={{ width: 200, borderTop: "1px solid #000", margin: "0 auto 10px" }}></div>
@@ -271,8 +272,9 @@ export default async function ReporteCursoPage({
           </div>
         </div>
       </div>
-      
-      <script dangerouslySetInnerHTML={{__html: `
+
+      <script dangerouslySetInnerHTML={{
+        __html: `
         document.getElementById('btnPrint').addEventListener('click', function() {
           window.print();
         });
