@@ -53,7 +53,13 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
     .eq("alumno_id", alumno.id)
     .order("fecha_registro", { ascending: true });
 
-  const listaMatriculas = matriculas || [];
+  const listaMatriculas = (matriculas || []).sort((a, b) => {
+    const modA = Array.isArray(a.modulos) ? a.modulos[0] : a.modulos;
+    const modB = Array.isArray(b.modulos) ? b.modulos[0] : b.modulos;
+    const dateA = modA?.fecha_fin ? new Date(modA.fecha_fin).getTime() : 0;
+    const dateB = modB?.fecha_fin ? new Date(modB.fecha_fin).getTime() : 0;
+    return dateA - dateB;
+  });
 
   // 3. Cargar notas de cursos para estas matrículas
   const matriculaIds = listaMatriculas.map(m => m.id);
@@ -158,7 +164,7 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
             <div style={{ border: "1px solid #0066cc", padding: 3, borderRadius: 4, background: "#fff", display: "inline-block", flexShrink: 0 }}>
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(
-                  `https://tecsur.edu.pe/reportes/historial?token=${token || Buffer.from(`TS-${dni}`).toString('base64')}`
+                  `https://tecsur.edu.pe/api/reportes/historial/pdf?token=${token || Buffer.from(`TS-${dni}`).toString('base64')}`
                 )}`}
                 alt="QR Verificación"
                 style={{ width: 70, height: 70, display: "block" }}
