@@ -279,7 +279,7 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
             return (
               <div key={mat.id} style={{ pageBreakInside: "avoid" }}>
                 <div className="modulo-header-strip">
-                  {modulo?.nombre} &nbsp;&nbsp;&nbsp;&nbsp;
+                  MODULO {modulo?.nombre} &nbsp;&nbsp;&nbsp;&nbsp;
                   <span style={{ fontSize: "11px", fontWeight: "normal", textTransform: "none", color: "#475569" }}>
                     (Del {formatLocaleDate(modulo?.fecha_inicio)} al {formatLocaleDate(modulo?.fecha_fin)})
                   </span>
