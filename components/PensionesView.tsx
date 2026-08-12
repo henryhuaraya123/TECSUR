@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Grid,
   Download,
+  Users,
   Pencil
 } from "lucide-react";
 import Modal from "./Modal";
@@ -74,13 +75,19 @@ interface Cargo {
 }
 
 export default function PensionesView() {
-  const [activeTab, setActiveTab] = useState<"pensiones" | "configuracion">("pensiones");
+  const [activeTab, setActiveTab] = useState<"pensiones" | "control" | "configuracion">("control");
+
+  // ── PESTAÑA: CONTROL POR GRUPOS ──
+  const [viewingModuleFinances, setViewingModuleFinances] = useState<any | null>(null);
+  const [moduleStudents, setModuleStudents] = useState<any[]>([]);
+  const [modulePayments, setModulePayments] = useState<any[]>([]);
+  const [loadingModuleFinances, setLoadingModuleFinances] = useState(false);
 
   // ── PESTAÑA: REGISTRAR PAGOS ──
   const [dni, setDni] = useState("");
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [selectedAlumno, setSelectedAlumno] = useState<Alumno | null>(null);
   const [matriculas, setMatriculas] = useState<Matricula[]>([]);
   const [pensiones, setPensiones] = useState<Pension[]>([]);
@@ -131,7 +138,7 @@ export default function PensionesView() {
   const [filterEndDateConfig, setFilterEndDateConfig] = useState("");
 
   // Agrupamiento y Carpetas
-  const [groupByConfig, setGroupByConfig] = useState<"carrera" | "aula" | "todos">("todos");
+  const [groupByConfig, setGroupByConfig] = useState<"carrera" | "aula" | "todos">("aula");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   // Formulario de creación de Cargo
@@ -283,9 +290,9 @@ export default function PensionesView() {
     }
   }
 
-  // Cargar datos de configuración cuando se active la pestaña de configuración
+  // Cargar datos de configuración cuando se active la pestaña de configuración o control
   useEffect(() => {
-    if (activeTab === "configuracion") {
+    if (activeTab === "configuracion" || activeTab === "control") {
       loadConfigData();
     }
   }, [activeTab]);
@@ -324,6 +331,26 @@ export default function PensionesView() {
     }
   }
 
+  async function loadModuleFinances(m: any) {
+    setViewingModuleFinances(m);
+    setLoadingModuleFinances(true);
+    try {
+      const [matRes, penRes] = await Promise.all([
+        fetch(`/api/matriculas?modulo_id=${m.id}`),
+        fetch(`/api/pensiones?modulo_id=${m.id}`)
+      ]);
+      const matData = await matRes.json();
+      const penData = await penRes.json();
+      setModuleStudents(Array.isArray(matData) ? matData : []);
+      setModulePayments(Array.isArray(penData) ? penData : []);
+    } catch (e) {
+      console.error(e);
+      setAlertInfo({ open: true, message: "Error al cargar datos financieros del módulo", type: "error" });
+    } finally {
+      setLoadingModuleFinances(false);
+    }
+  }
+
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!dni.trim()) return;
@@ -333,21 +360,21 @@ export default function PensionesView() {
     setMatriculas([]);
     setPensiones([]);
     setModuleCargos([]);
-    
+
     try {
       // 1. Buscar alumno en la base de datos
       const searchVal = dni.trim();
       const resAlum = await fetch(`/api/alumnos?search=${encodeURIComponent(searchVal)}&pageSize=5`);
       const dataAlum = await resAlum.json();
       const student = dataAlum.data && dataAlum.data.length > 0 ? dataAlum.data[0] : null;
-      
+
       if (!student) {
         setError("Estudiante no encontrado. Verifique el DNI o Código.");
         return;
       }
-      
+
       setSelectedAlumno(student);
-      
+
       // 2. Cargar matrículas, pensiones y cargos
       const [matRes, penRes, cargosRes] = await Promise.all([
         fetch(`/api/matriculas?alumno_id=${student.id}`),
@@ -372,12 +399,12 @@ export default function PensionesView() {
     const { name, value } = e.target;
     setForm((prev) => {
       const next = { ...prev, [name]: value };
-      
+
       // Si cambia de modulo, recalculamos sus deudas específicas
       if (name === "modulo_id") {
         const m = matriculas.find(x => x.modulo_id === value);
         const cargos = moduleCargos.filter(c => c.modulo_id === value);
-        
+
         let remMat = 0;
         let remPen = 0;
         let remOtr = 0;
@@ -386,7 +413,7 @@ export default function PensionesView() {
           const costMat = cargos.filter(c => c.concepto === "MATRICULA").reduce((s, c) => s + Number(c.monto), 0);
           const costPen = cargos.filter(c => c.concepto === "PENSION").reduce((s, c) => s + Number(c.monto), 0);
           const costOtr = cargos.filter(c => c.concepto === "OTROS").reduce((s, c) => s + Number(c.monto), 0);
-          
+
           let paidMat = 0;
           let paidPen = 0;
           let paidOtr = 0;
@@ -397,7 +424,7 @@ export default function PensionesView() {
               if (p.concepto === "OTROS") paidOtr += p.monto_pagado;
             }
           });
-          
+
           remMat = Math.max(0, costMat - paidMat);
           remPen = Math.max(0, costPen - paidPen);
           remOtr = Math.max(0, costOtr - paidOtr);
@@ -409,13 +436,13 @@ export default function PensionesView() {
             remPen = pagosModulo[0].deuda_pendiente;
           }
         }
-        
+
         setCurrentModuleCosts({
           remainingMatricula: remMat,
           remainingPension: remPen,
           remainingOtros: remOtr
         });
-        
+
         // Pre-llenar deuda restante según concepto actual
         const currentConcept = next.concepto;
         const currentMonto = parseFloat(next.monto_pagado || "0");
@@ -429,7 +456,7 @@ export default function PensionesView() {
           next.deuda_pendiente = "0";
         }
       }
-      
+
       // Auto-calcular deuda_pendiente al modificar monto o concepto
       if (name === "monto_pagado" || name === "concepto") {
         const monto = parseFloat(next.monto_pagado || "0");
@@ -445,7 +472,7 @@ export default function PensionesView() {
         }
         next.deuda_pendiente = String(remaining);
       }
-      
+
       return next;
     });
   }
@@ -522,12 +549,12 @@ export default function PensionesView() {
       if (!res.ok) throw new Error(data.error || "Error al registrar el pago");
       setAlertInfo({ open: true, message: `Pago registrado: Recibo ${form.nro_recibo}`, type: "success" });
       setShowForm(false);
-      
+
       // Recargar historial de pagos de este alumno
       const penRes = await fetch(`/api/pensiones?alumno_id=${selectedAlumno.id}`);
       const penData = await penRes.json();
       setPensiones(Array.isArray(penData) ? penData : []);
-      
+
       // Refrescar también la lista general para cuando vuelva
       loadAllPayments();
     } catch (err) {
@@ -593,12 +620,12 @@ export default function PensionesView() {
     if (searchGen.trim()) {
       const q = searchGen.toLowerCase().trim();
       const recMatch = (p.nro_recibo || "").toLowerCase().includes(q);
-      
+
       const alum = p.alumnos;
       const dniMatch = alum ? (alum.dni || "").toLowerCase().includes(q) : false;
       const nameMatch = alum ? (alum.nombres || "").toLowerCase().includes(q) : false;
       const apeMatch = alum ? (alum.apellidos || "").toLowerCase().includes(q) : false;
-      
+
       if (!recMatch && !dniMatch && !nameMatch && !apeMatch) return false;
     }
     if (filterConceptoGen) {
@@ -701,7 +728,7 @@ export default function PensionesView() {
     if (!modId) return;
 
     const cargos = cargosPorModulo[modId] || [];
-    
+
     // Si hay cargos configurados, usamos el cálculo automatizado
     if (cargos.length > 0) {
       const costMatricula = cargos.filter(c => c.concepto === "MATRICULA").reduce((s, c) => s + Number(c.monto), 0);
@@ -724,10 +751,10 @@ export default function PensionesView() {
       // Fallback retrocompatible: usar la deuda_pendiente de la última transacción
       const pagosModulo = pensiones.filter(p => p.modulo_id === modId)
         .sort((a, b) => new Date(b.fecha_pago).getTime() - new Date(a.fecha_pago).getTime());
-      
+
       const pagado = pagosModulo.reduce((sum, p) => sum + p.monto_pagado, 0);
       pagadoPorModulo[modId] = pagado;
-      
+
       if (pagosModulo.length > 0) {
         deudaPorModulo[modId] = pagosModulo[0].deuda_pendiente;
         deudaTotal += pagosModulo[0].deuda_pendiente;
@@ -753,7 +780,18 @@ export default function PensionesView() {
       {/* Tabs de Navegación Financiera */}
       <div style={{ display: "flex", gap: 12, borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: 10 }}>
         <button
-          onClick={() => setActiveTab("pensiones")}
+          onClick={() => { setActiveTab("control"); setViewingModuleFinances(null); }}
+          style={{
+            background: activeTab === "control" ? "rgba(42,109,181,0.15)" : "transparent",
+            border: activeTab === "control" ? "1px solid rgba(42,109,181,0.3)" : "1px solid transparent",
+            borderRadius: 8, padding: "8px 16px", color: activeTab === "control" ? "#dbeafe" : "rgba(255,255,255,0.4)",
+            fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s"
+          }}
+        >
+          <Layers size={14} /> Control por Grupos (Módulo)
+        </button>
+        <button
+          onClick={() => { setActiveTab("pensiones"); setViewingModuleFinances(null); }}
           style={{
             background: activeTab === "pensiones" ? "rgba(42,109,181,0.15)" : "transparent",
             border: activeTab === "pensiones" ? "1px solid rgba(42,109,181,0.3)" : "1px solid transparent",
@@ -764,7 +802,7 @@ export default function PensionesView() {
           <CreditCard size={14} /> Registrar Pago / Historial
         </button>
         <button
-          onClick={() => setActiveTab("configuracion")}
+          onClick={() => { setActiveTab("configuracion"); setViewingModuleFinances(null); }}
           style={{
             background: activeTab === "configuracion" ? "rgba(42,109,181,0.15)" : "transparent",
             border: activeTab === "configuracion" ? "1px solid rgba(42,109,181,0.3)" : "1px solid transparent",
@@ -783,18 +821,18 @@ export default function PensionesView() {
         <>
           {/* SECCIÓN DE BÚSQUEDA CENTRADA Y FORMAL */}
           <div style={{ display: "flex", justifyContent: "center", width: "100%", padding: "10px 0" }}>
-            <div style={{ 
-              padding: "32px", 
-              border: "1px solid rgba(255,255,255,0.08)", 
-              width: "100%", 
-              maxWidth: 600, 
+            <div style={{
+              padding: "32px",
+              border: "1px solid rgba(255,255,255,0.08)",
+              width: "100%",
+              maxWidth: 600,
               textAlign: "center",
               background: "#090f1a",
               borderRadius: 14
             }}>
               <h2 style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 14, textTransform: "uppercase" }}>Control de Pensiones y Pagos</h2>
               <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 24, lineHeight: 1.5 }}>Ingrese el DNI o Código del estudiante para ver cargos de cobro, calcular deudas y registrar pagos.</p>
-              
+
               <form onSubmit={handleSearch} style={{ display: "flex", gap: 12, justifyContent: "center" }}>
                 <div style={{ position: "relative", flex: 1 }}>
                   <Search size={14} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.3)" }} />
@@ -809,6 +847,7 @@ export default function PensionesView() {
                 </div>
                 <button
                   type="submit"
+                  id="btn-search-pensiones"
                   disabled={loadingData}
                   style={{ height: 42, padding: "0 20px", background: "#1a4a7a", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#fff", fontSize: 12, fontWeight: 700, cursor: loadingData ? "not-allowed" : "pointer" }}
                 >
@@ -1064,7 +1103,7 @@ export default function PensionesView() {
           {/* INFORME DE PAGOS Y CONTROLES POR ALUMNO SELECCIONADO */}
           {selectedAlumno && (
             <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-              
+
               {/* Header del Alumno (Formal y Plano) */}
               <div style={{ padding: "24px", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, background: "#090f1a", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
                 <div>
@@ -1113,7 +1152,7 @@ export default function PensionesView() {
 
               {/* Grillas de Datos en 2 Columnas */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 28, alignItems: "start" }}>
-                
+
                 {/* Columna Izquierda: Módulos y Matrículas */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   <h3 style={{ fontSize: 11, fontWeight: 800, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em", margin: 0, textTransform: "uppercase" }}>Módulos del Alumno</h3>
@@ -1142,12 +1181,12 @@ export default function PensionesView() {
                           <div>
                             <div style={{ fontWeight: 800, fontSize: 13, color: "#fff" }}>{m.modulos?.nombre.toUpperCase()}</div>
                             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 6, fontWeight: 500 }}>Horario: {m.modulos?.horario || "Sin horario registrado"}</div>
-                            
+
                             {/* Desglose Detallado de Cargos configurados */}
                             {cargos.length > 0 && (
                               <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 12, background: "rgba(255,255,255,0.01)", padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.03)" }}>
                                 <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(74,179,216,0.6)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Desglose de Deuda</div>
-                                
+
                                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
                                   <span style={{ color: "rgba(255,255,255,0.45)" }}>Matrícula:</span>
                                   <span style={{ fontWeight: 600, color: remMat > 0 ? "#60a5fa" : "rgba(255,255,255,0.3)" }}>
@@ -1180,8 +1219,8 @@ export default function PensionesView() {
                                 {deuda > 0 ? `DEBE: S/ ${deuda.toFixed(2)}` : "AL DÍA"}
                               </div>
                             </div>
-                            <button 
-                              onClick={() => openPagoModal(modId)} 
+                            <button
+                              onClick={() => openPagoModal(modId)}
                               style={{ padding: "6px 12px", border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)", color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer", borderRadius: 6 }}
                             >
                               <Plus size={12} style={{ display: "inline", marginRight: 4 }} /> REGISTRAR PAGO
@@ -1222,11 +1261,11 @@ export default function PensionesView() {
                             <td style={{ padding: 14, color: "#fff" }}>{p.fecha_pago}</td>
                             <td style={{ padding: 14, color: "#fff", fontFamily: "monospace", fontWeight: 700 }}>{p.nro_recibo}</td>
                             <td style={{ padding: 14, color: "#fff" }}>
-                              <span style={{ 
-                                fontSize: 9, 
-                                fontWeight: 700, 
-                                padding: "3px 8px", 
-                                borderRadius: 4, 
+                              <span style={{
+                                fontSize: 9,
+                                fontWeight: 700,
+                                padding: "3px 8px",
+                                borderRadius: 4,
                                 background: p.concepto === "MATRICULA" ? "rgba(59,130,246,0.12)" : p.concepto === "OTROS" ? "rgba(107,114,128,0.15)" : "rgba(16,185,129,0.12)",
                                 color: p.concepto === "MATRICULA" ? "#60a5fa" : p.concepto === "OTROS" ? "#9ca3af" : "#34d399",
                                 border: p.concepto === "MATRICULA" ? "1px solid rgba(59,130,246,0.2)" : p.concepto === "OTROS" ? "1px solid rgba(107,114,128,0.2)" : "1px solid rgba(16,185,129,0.2)"
@@ -1311,7 +1350,7 @@ export default function PensionesView() {
                   })}
                 </select>
               </div>
-              
+
               {form.modulo_id && (
                 <div style={{ background: "rgba(255,255,255,0.02)", padding: 14, borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: "rgba(255,255,255,0.6)", display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1512,671 +1551,820 @@ export default function PensionesView() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB: CONFIGURACIÓN DE CONCEPTOS POR MÓDULO
+          TAB: CONFIGURACIÓN DE CONCEPTOS O CONTROL
           ───────────────────────────────────────────────────────────── */}
-      {activeTab === "configuracion" && (
+      {(activeTab === "configuracion" || activeTab === "control") && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <div>
-            <h2 style={{ fontSize: 16, fontWeight: 800, color: "#fff", margin: 0 }}>Configurar Conceptos de Cobro (Cargos) por Módulo</h2>
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "6px 0 16px", lineHeight: 1.4 }}>
-              Defina los montos obligatorios que los estudiantes deben pagar por cada módulo (ej. matrícula, pensión del mes, certificaciones). Al matricularse en el módulo, la deuda se generará en base a estos cargos.
-            </p>
-          </div>
-
-          {/* Controles de Búsqueda y Filtros de Configuración */}
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", width: "100%", background: "rgba(255,255,255,0.02)", padding: "16px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)" }}>
-            {/* Buscador de módulos */}
-            <div style={{ position: "relative", flex: 1, minWidth: 240 }}>
-              <Search size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.4)" }} />
-              <input
-                type="text"
-                placeholder="Buscar módulo por nombre, aula, profesor o local..."
-                value={searchModConfig}
-                onChange={e => setSearchModConfig(e.target.value)}
-                style={{ ...inp, paddingLeft: 36, height: 38, fontSize: 12 }}
-              />
-            </div>
-
-            {/* Selector de Agrupamiento (Organización por carpetas) */}
-            <div style={{ display: "flex", gap: 6, background: "rgba(10,22,44,0.7)", padding: "4px", borderRadius: 10, border: "1px solid rgba(42,109,181,0.22)", height: 40, alignItems: "center", boxSizing: "border-box" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setGroupByConfig("todos");
-                  setExpandedGroups({});
-                }}
-                style={{
-                  background: groupByConfig === "todos" ? "rgba(74,179,216,0.15)" : "transparent",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "0 12px",
-                  height: 32,
-                  color: groupByConfig === "todos" ? "#4ab3d8" : "rgba(120, 160, 210, 0.65)",
-                  fontWeight: groupByConfig === "todos" ? 700 : 500,
-                  fontSize: 11,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  transition: "all 0.2s"
-                }}
-              >
-                <Grid size={13} />
-                VER TODOS (LISTA)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setGroupByConfig("carrera");
-                  setExpandedGroups({});
-                }}
-                style={{
-                  background: groupByConfig === "carrera" ? "rgba(74,179,216,0.15)" : "transparent",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "0 12px",
-                  height: 32,
-                  color: groupByConfig === "carrera" ? "#4ab3d8" : "rgba(120, 160, 210, 0.65)",
-                  fontWeight: groupByConfig === "carrera" ? 700 : 500,
-                  fontSize: 11,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  transition: "all 0.2s"
-                }}
-              >
-                <Folder size={13} />
-                POR CARRERA
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setGroupByConfig("aula");
-                  setExpandedGroups({});
-                }}
-                style={{
-                  background: groupByConfig === "aula" ? "rgba(74,179,216,0.15)" : "transparent",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "0 12px",
-                  height: 32,
-                  color: groupByConfig === "aula" ? "#4ab3d8" : "rgba(120, 160, 210, 0.65)",
-                  fontWeight: groupByConfig === "aula" ? 700 : 500,
-                  fontSize: 11,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  transition: "all 0.2s"
-                }}
-              >
-                <Folder size={13} />
-                POR AULA
-              </button>
-            </div>
-
-            {/* Selector de Carrera */}
-            <div style={{ position: "relative", width: 220 }}>
-              <select
-                value={filterCarreraConfig}
-                onChange={e => setFilterCarreraConfig(e.target.value)}
-                style={{ ...inp, height: 38, fontSize: 12, paddingRight: 30, cursor: "pointer" }}
-              >
-                <option value="">Todas las Carreras</option>
-                {carreras.map(c => (
-                  <option key={c.id} value={c.id}>{c.nombre}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Filtro Fecha Desde */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 700 }}>DESDE:</span>
-              <input
-                type="date"
-                value={filterStartDateConfig}
-                onChange={e => setFilterStartDateConfig(e.target.value)}
-                style={{ ...inp, width: 130, height: 38, fontSize: 11, padding: "0 8px", cursor: "pointer", colorScheme: "dark" }}
-              />
-            </div>
-
-            {/* Filtro Fecha Hasta */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 700 }}>HASTA:</span>
-              <input
-                type="date"
-                value={filterEndDateConfig}
-                onChange={e => setFilterEndDateConfig(e.target.value)}
-                style={{ ...inp, width: 130, height: 38, fontSize: 11, padding: "0 8px", cursor: "pointer", colorScheme: "dark" }}
-              />
-            </div>
-
-            {/* Limpiar Filtros */}
-            {(searchModConfig || filterCarreraConfig || filterStartDateConfig || filterEndDateConfig) && (
-              <button
-                onClick={() => { setSearchModConfig(""); setFilterCarreraConfig(""); setFilterStartDateConfig(""); setFilterEndDateConfig(""); }}
-                style={{
-                  background: "rgba(248,113,113,0.08)",
-                  border: "1px solid rgba(248,113,113,0.18)",
-                  color: "#f87171",
-                  height: 38,
-                  padding: "0 12px",
-                  borderRadius: 8,
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4
-                }}
-              >
-                <XCircle size={13} /> Limpiar
-              </button>
-            )}
-          </div>
-
-          {loadingModulos ? (
-            <div style={{ padding: 40, textAlign: "center", color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
-              Cargando módulos y conceptos...
-            </div>
-          ) : filteredModulosConfig.length === 0 ? (
-            <div style={{ padding: 40, textAlign: "center", border: "1px dashed rgba(255,255,255,0.08)", borderRadius: 12, color: "rgba(255,255,255,0.3)", fontSize: 13 }}>
-              No se encontraron módulos con los filtros aplicados.
-            </div>
-          ) : groupByConfig === "todos" ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }}>
-              {filteredModulosConfig.map(m => {
-                const cargos = allCargos.filter(c => c.modulo_id === m.id);
-                const totalCargos = cargos.reduce((s, c) => s + Number(c.monto), 0);
-                
-                return (
-                  <div key={m.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 20, background: "#090f1a", display: "flex", flexDirection: "column", gap: 14 }}>
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: 14, color: "#dbeafe", lineHeight: 1.3 }}>{m.nombre.toUpperCase()}</div>
-                      
-                      {/* Etiquetas */}
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
-                        {/* Modalidad */}
-                        <span style={{
-                          fontSize: 8.5,
-                          fontWeight: 700,
-                          padding: "2px 6px",
-                          borderRadius: 12,
-                          textTransform: "uppercase",
-                          background: m.modalidad === "virtual" ? "rgba(139, 92, 246, 0.15)" : m.modalidad === "semipresencial" ? "rgba(245, 158, 11, 0.15)" : "rgba(59, 130, 246, 0.15)",
-                          color: m.modalidad === "virtual" ? "#a78bfa" : m.modalidad === "semipresencial" ? "#fbbf24" : "#60a5fa",
-                          border: `1px solid ${m.modalidad === "virtual" ? "rgba(139, 92, 246, 0.2)" : m.modalidad === "semipresencial" ? "rgba(245, 158, 11, 0.2)" : "rgba(59, 130, 246, 0.2)"}`
-                        }}>
-                          {m.modalidad}
-                        </span>
-
-                        {/* Fechas */}
-                        {(m.fecha_inicio || m.fecha_fin) && (
-                          <span style={{
-                            fontSize: 8.5,
-                            fontWeight: 600,
-                            padding: "2px 6px",
-                            borderRadius: 12,
-                            background: "rgba(255, 255, 255, 0.05)",
-                            color: "rgba(255, 255, 255, 0.6)",
-                            border: "1px solid rgba(255, 255, 255, 0.1)",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 3
-                          }}>
-                            <Calendar size={9} />
-                            {m.fecha_inicio ? new Date(m.fecha_inicio + "T00:00:00").toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : "?"} - {m.fecha_fin ? new Date(m.fecha_fin + "T00:00:00").toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : "?"}
-                          </span>
-                        )}
-
-                        {/* Horario */}
-                        {m.horario && (
-                          <span style={{
-                            fontSize: 8.5,
-                            fontWeight: 600,
-                            padding: "2px 6px",
-                            borderRadius: 12,
-                            background: "rgba(16, 185, 129, 0.1)",
-                            color: "#34d399",
-                            border: "1px solid rgba(16, 185, 129, 0.15)",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 3
-                          }}>
-                            <Clock size={9} />
-                            {m.horario}
-                          </span>
-                        )}
-                      </div>
-
-                      <div style={{ fontSize: 9.5, color: "rgba(74,179,216,0.6)", marginTop: 8, fontWeight: 700, letterSpacing: "0.02em" }}>
-                        CARRERA: {m.carreras?.nombre.toUpperCase() || "SIN CARRERA"}
-                      </div>
-                      {m.aula && (
-                        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
-                          Aula: <strong style={{ color: "#fff" }}>{m.aula}</strong> {m.local ? `(${m.local})` : ""}
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 12 }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
-                        <span>CONCEPTOS CONFIGURADOS</span>
-                        <span style={{ color: "#dbeafe" }}>S/ {totalCargos.toFixed(2)}</span>
-                      </div>
-
-                      {cargos.length === 0 ? (
-                        <div style={{ padding: "16px 0", textAlign: "center", color: "rgba(255,255,255,0.25)", fontSize: 11, border: "1px dashed rgba(255,255,255,0.04)", borderRadius: 8 }}>
-                          Sin cargos. Los alumnos no acumularán deuda.
-                        </div>
-                      ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {cargos.map(c => (
-                            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 8 }}>
-                              <div>
-                                <span style={{ 
-                                  fontSize: 8.5, 
-                                  fontWeight: 700, 
-                                  padding: "2px 6px", 
-                                  borderRadius: 3, 
-                                  background: c.concepto === "MATRICULA" ? "rgba(59,130,246,0.12)" : c.concepto === "OTROS" ? "rgba(107,114,128,0.15)" : "rgba(16,185,129,0.12)",
-                                  color: c.concepto === "MATRICULA" ? "#60a5fa" : c.concepto === "OTROS" ? "#9ca3af" : "#34d399",
-                                  border: c.concepto === "MATRICULA" ? "1px solid rgba(59,130,246,0.15)" : c.concepto === "OTROS" ? "1px solid rgba(107,114,128,0.15)" : "1px solid rgba(16,185,129,0.15)"
-                                }}>
-                                  {c.concepto}
-                                </span>
-                                <div style={{ fontSize: 11, color: "#fff", fontWeight: 700, marginTop: 4 }}>
-                                  S/ {Number(c.monto).toFixed(2)}
-                                </div>
-                                {c.descripcion && (
-                                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>{c.descripcion}</div>
-                                )}
-                              </div>
-                              <button
-                                onClick={() => handleDeleteCargo(c.id)}
-                                style={{
-                                  background: "transparent", border: "none", color: "rgba(248,113,113,0.5)",
-                                  padding: 6, cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center"
-                                }}
-                                title="Eliminar Concepto"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
+          {viewingModuleFinances && activeTab === "control" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={{ padding: "16px 20px", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, background: "#090f1a", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <button
-                      onClick={() => openNewCargo(m.id)}
+                      onClick={() => setViewingModuleFinances(null)}
                       style={{
-                        width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 8, padding: "8px 12px", color: "#fff", fontSize: 10, fontWeight: 700,
-                        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                        marginTop: "auto"
+                        background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6,
+                        padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s"
                       }}
                     >
-                      <Plus size={12} /> Agregar Concepto de Cobro
+                      <ChevronLeft size={13} /> Volver a Grupos
                     </button>
                   </div>
-                );
-              })}
+                  <h2 style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginTop: 14, marginBottom: 0 }}>
+                    {viewingModuleFinances.nombre.toUpperCase()}
+                  </h2>
+                </div>
+              </div>
+
+              {loadingModuleFinances ? (
+                <div style={{ padding: 60, textAlign: "center", color: "rgba(255,255,255,0.4)" }}>Cargando datos...</div>
+              ) : (
+                <div style={{ overflowX: "auto", background: "#090f1a", borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ background: "rgba(255,255,255,0.03)", color: "rgba(255,255,255,0.5)" }}>
+                        <th style={{ padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontWeight: 700 }}>ESTUDIANTE / DNI</th>
+                        <th style={{ padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontWeight: 700 }}>MATRÍCULA</th>
+                        <th style={{ padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontWeight: 700 }}>PENSIÓN</th>
+                        <th style={{ padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontWeight: 700 }}>OTROS</th>
+                        <th style={{ padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontWeight: 700, textAlign: "right" }}>DEUDA TOTAL</th>
+                        <th style={{ padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontWeight: 700, textAlign: "center" }}>ACCIONES</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {moduleStudents.map(m => {
+                        const alum = m.alumnos;
+                        if (!alum) return null;
+
+                        const cargos = allCargos.filter(c => c.modulo_id === viewingModuleFinances.id);
+                        const costMat = cargos.filter(c => c.concepto === "MATRICULA").reduce((s, c) => s + Number(c.monto), 0);
+                        const costPen = cargos.filter(c => c.concepto === "PENSION").reduce((s, c) => s + Number(c.monto), 0);
+                        const costOtr = cargos.filter(c => c.concepto === "OTROS").reduce((s, c) => s + Number(c.monto), 0);
+
+                        let paidMat = 0, paidPen = 0, paidOtr = 0;
+                        modulePayments.forEach(p => {
+                          if (p.alumno_id === alum.id) {
+                            if (p.concepto === "MATRICULA") paidMat += p.monto_pagado;
+                            if (p.concepto === "PENSION") paidPen += p.monto_pagado;
+                            if (p.concepto === "OTROS") paidOtr += p.monto_pagado;
+                          }
+                        });
+
+                        const remMat = Math.max(0, costMat - paidMat);
+                        const remPen = Math.max(0, costPen - paidPen);
+                        const remOtr = Math.max(0, costOtr - paidOtr);
+                        const deudaTotalEstudiante = remMat + remPen + remOtr;
+
+                        return (
+                          <tr key={m.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                            <td style={{ padding: "14px 20px" }}>
+                              <div style={{ fontWeight: 700, color: "#fff" }}>{`${alum.apellidos?.toUpperCase()}, ${alum.nombres?.toUpperCase()}`}</div>
+                              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>DNI: {alum.dni} | Celular: {alum.celular || "N/A"}</div>
+                            </td>
+                            <td style={{ padding: "14px 20px", color: remMat > 0 ? "#60a5fa" : "rgba(255,255,255,0.3)" }}>
+                              {costMat > 0 ? (remMat > 0 ? `Debe S/ ${remMat.toFixed(2)}` : "Pagado") : "—"}
+                            </td>
+                            <td style={{ padding: "14px 20px", color: remPen > 0 ? "#34d399" : "rgba(255,255,255,0.3)" }}>
+                              {costPen > 0 ? (remPen > 0 ? `Debe S/ ${remPen.toFixed(2)}` : "Pagado") : "—"}
+                            </td>
+                            <td style={{ padding: "14px 20px", color: remOtr > 0 ? "#fbbf24" : "rgba(255,255,255,0.3)" }}>
+                              {costOtr > 0 ? (remOtr > 0 ? `Debe S/ ${remOtr.toFixed(2)}` : "Pagado") : "—"}
+                            </td>
+                            <td style={{ padding: "14px 20px", color: deudaTotalEstudiante > 0 ? "#f87171" : "rgba(255,255,255,0.3)", fontWeight: 700, textAlign: "right" }}>
+                              {deudaTotalEstudiante > 0 ? `S/ ${deudaTotalEstudiante.toFixed(2)}` : "AL DÍA"}
+                            </td>
+                            <td style={{ padding: "14px 20px", textAlign: "center" }}>
+                              <button
+                                onClick={() => {
+                                  setDni(alum.dni);
+                                  setActiveTab("pensiones");
+                                  setTimeout(() => {
+                                    const searchBtn = document.getElementById("btn-search-pensiones");
+                                    if (searchBtn) searchBtn.click();
+                                  }, 150);
+                                }}
+                                style={{ background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.3)", borderRadius: 6, padding: "8px 12px", color: "#60a5fa", fontSize: 10, fontWeight: 700, cursor: "pointer", alignSelf: "center", justifySelf: "center" }}
+                              >
+                                VER ESTADO / COBRAR
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {moduleStudents.length === 0 && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: 40, textAlign: "center", color: "rgba(255,255,255,0.3)" }}>
+                            No hay estudiantes matriculados en este módulo.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {/* Controles para expandir/colapsar todas las carpetas */}
-              <div style={{ display: "flex", gap: 16, justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next: Record<string, boolean> = {};
-                    Object.keys(nestedGroupedModulos).forEach(topKey => {
-                      next[topKey] = true;
-                      Object.keys(nestedGroupedModulos[topKey]).forEach(subKey => {
-                        next[`${topKey}::${subKey}`] = true;
-                      });
-                    });
-                    setExpandedGroups(next);
-                  }}
-                  style={{
-                    background: "transparent", border: "none", color: "#4ab3d8", fontSize: 11, cursor: "pointer", fontWeight: 600
-                  }}
-                >
-                  [+] Abrir todas las carpetas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next: Record<string, boolean> = {};
-                    Object.keys(nestedGroupedModulos).forEach(topKey => {
-                      next[topKey] = false;
-                      Object.keys(nestedGroupedModulos[topKey]).forEach(subKey => {
-                        next[`${topKey}::${subKey}`] = false;
-                      });
-                    });
-                    setExpandedGroups(next);
-                  }}
-                  style={{
-                    background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 11, cursor: "pointer", fontWeight: 600
-                  }}
-                >
-                  [-] Cerrar todas las carpetas
-                </button>
+            <>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 800, color: "#fff", margin: 0 }}>
+                  {activeTab === "configuracion" ? "Configurar Conceptos de Cobro (Cargos) por Módulo" : "Control Financiero y Estado de Pagos por Módulo"}
+                </h2>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "6px 0 16px", lineHeight: 1.4 }}>
+                  {activeTab === "configuracion"
+                    ? "Defina los montos obligatorios que los estudiantes deben pagar por cada módulo (ej. matrícula, pensión del mes, certificaciones). Al matricularse en el módulo, la deuda se generará en base a estos cargos."
+                    : "Seleccione el módulo para visualizar su grupo de estudiantes, monitorear deudas pendientes y llevar un mejor control del estado económico grupal."}
+                </p>
               </div>
 
-              {Object.keys(nestedGroupedModulos).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(topKey => {
-                const subGroups = nestedGroupedModulos[topKey];
-                const isTopOpen = !!expandedGroups[topKey]; // Cerrado por defecto
-                
-                // Calcular total módulos y cargos configurados en este grupo de nivel superior
-                let totalModulesInTop = 0;
-                let totalCargosInTop = 0;
-                Object.keys(subGroups).forEach(subKey => {
-                  const subModules = subGroups[subKey];
-                  totalModulesInTop += subModules.length;
-                  subModules.forEach(m => {
-                    const cargos = allCargos.filter(c => c.modulo_id === m.id);
-                    totalCargosInTop += cargos.reduce((s, c) => s + Number(c.monto), 0);
-                  });
-                });
+              {/* Controles de Búsqueda y Filtros de Configuración */}
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", width: "100%", background: "rgba(255,255,255,0.02)", padding: "16px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)" }}>
+                {/* Buscador de módulos */}
+                <div style={{ position: "relative", flex: 1, minWidth: 240 }}>
+                  <Search size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.4)" }} />
+                  <input
+                    type="text"
+                    placeholder="Buscar módulo por nombre, aula, profesor o local..."
+                    value={searchModConfig}
+                    onChange={e => setSearchModConfig(e.target.value)}
+                    style={{ ...inp, paddingLeft: 36, height: 38, fontSize: 12 }}
+                  />
+                </div>
 
-                return (
-                  <div key={topKey} style={{ border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, background: "rgba(8,16,34,0.45)", overflow: "hidden" }}>
-                    {/* Header de la carpeta de nivel superior */}
+                {/* Selector de Agrupamiento (Organización por carpetas) */}
+                <div style={{ display: "flex", gap: 6, background: "rgba(10,22,44,0.7)", padding: "4px", borderRadius: 10, border: "1px solid rgba(42,109,181,0.22)", height: 40, alignItems: "center", boxSizing: "border-box" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGroupByConfig("todos");
+                      setExpandedGroups({});
+                    }}
+                    style={{
+                      background: groupByConfig === "todos" ? "rgba(74,179,216,0.15)" : "transparent",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "0 12px",
+                      height: 32,
+                      color: groupByConfig === "todos" ? "#4ab3d8" : "rgba(120, 160, 210, 0.65)",
+                      fontWeight: groupByConfig === "todos" ? 700 : 500,
+                      fontSize: 11,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <Grid size={13} />
+                    VER TODOS (LISTA)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGroupByConfig("carrera");
+                      setExpandedGroups({});
+                    }}
+                    style={{
+                      background: groupByConfig === "carrera" ? "rgba(74,179,216,0.15)" : "transparent",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "0 12px",
+                      height: 32,
+                      color: groupByConfig === "carrera" ? "#4ab3d8" : "rgba(120, 160, 210, 0.65)",
+                      fontWeight: groupByConfig === "carrera" ? 700 : 500,
+                      fontSize: 11,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <Folder size={13} />
+                    POR CARRERA
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGroupByConfig("aula");
+                      setExpandedGroups({});
+                    }}
+                    style={{
+                      background: groupByConfig === "aula" ? "rgba(74,179,216,0.15)" : "transparent",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "0 12px",
+                      height: 32,
+                      color: groupByConfig === "aula" ? "#4ab3d8" : "rgba(120, 160, 210, 0.65)",
+                      fontWeight: groupByConfig === "aula" ? 700 : 500,
+                      fontSize: 11,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <Folder size={13} />
+                    POR AULA
+                  </button>
+                </div>
+
+                {/* Selector de Carrera */}
+                <div style={{ position: "relative", width: 220 }}>
+                  <select
+                    value={filterCarreraConfig}
+                    onChange={e => setFilterCarreraConfig(e.target.value)}
+                    style={{ ...inp, height: 38, fontSize: 12, paddingRight: 30, cursor: "pointer" }}
+                  >
+                    <option value="">Todas las Carreras</option>
+                    {carreras.map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filtro Fecha Desde */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 700 }}>DESDE:</span>
+                  <input
+                    type="date"
+                    value={filterStartDateConfig}
+                    onChange={e => setFilterStartDateConfig(e.target.value)}
+                    style={{ ...inp, width: 130, height: 38, fontSize: 11, padding: "0 8px", cursor: "pointer", colorScheme: "dark" }}
+                  />
+                </div>
+
+                {/* Filtro Fecha Hasta */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 700 }}>HASTA:</span>
+                  <input
+                    type="date"
+                    value={filterEndDateConfig}
+                    onChange={e => setFilterEndDateConfig(e.target.value)}
+                    style={{ ...inp, width: 130, height: 38, fontSize: 11, padding: "0 8px", cursor: "pointer", colorScheme: "dark" }}
+                  />
+                </div>
+
+                {/* Limpiar Filtros */}
+                {(searchModConfig || filterCarreraConfig || filterStartDateConfig || filterEndDateConfig) && (
+                  <button
+                    onClick={() => { setSearchModConfig(""); setFilterCarreraConfig(""); setFilterStartDateConfig(""); setFilterEndDateConfig(""); }}
+                    style={{
+                      background: "rgba(248,113,113,0.08)",
+                      border: "1px solid rgba(248,113,113,0.18)",
+                      color: "#f87171",
+                      height: 38,
+                      padding: "0 12px",
+                      borderRadius: 8,
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4
+                    }}
+                  >
+                    <XCircle size={13} /> Limpiar
+                  </button>
+                )}
+              </div>
+
+              {loadingModulos ? (
+                <div style={{ padding: 40, textAlign: "center", color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
+                  Cargando módulos y conceptos...
+                </div>
+              ) : filteredModulosConfig.length === 0 ? (
+                <div style={{ padding: 40, textAlign: "center", border: "1px dashed rgba(255,255,255,0.08)", borderRadius: 12, color: "rgba(255,255,255,0.3)", fontSize: 13 }}>
+                  No se encontraron módulos con los filtros aplicados.
+                </div>
+              ) : groupByConfig === "todos" ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }}>
+                  {filteredModulosConfig.map(m => {
+                    const cargos = allCargos.filter(c => c.modulo_id === m.id);
+                    const totalCargos = cargos.reduce((s, c) => s + Number(c.monto), 0);
+
+                    return (
+                      <div key={m.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 20, background: "#090f1a", display: "flex", flexDirection: "column", gap: 14 }}>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: 14, color: "#dbeafe", lineHeight: 1.3 }}>{m.nombre.toUpperCase()}</div>
+
+                          {/* Etiquetas */}
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
+                            {/* Modalidad */}
+                            <span style={{
+                              fontSize: 8.5,
+                              fontWeight: 700,
+                              padding: "2px 6px",
+                              borderRadius: 12,
+                              textTransform: "uppercase",
+                              background: m.modalidad === "virtual" ? "rgba(139, 92, 246, 0.15)" : m.modalidad === "semipresencial" ? "rgba(245, 158, 11, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                              color: m.modalidad === "virtual" ? "#a78bfa" : m.modalidad === "semipresencial" ? "#fbbf24" : "#60a5fa",
+                              border: `1px solid ${m.modalidad === "virtual" ? "rgba(139, 92, 246, 0.2)" : m.modalidad === "semipresencial" ? "rgba(245, 158, 11, 0.2)" : "rgba(59, 130, 246, 0.2)"}`
+                            }}>
+                              {m.modalidad}
+                            </span>
+
+                            {/* Fechas */}
+                            {(m.fecha_inicio || m.fecha_fin) && (
+                              <span style={{
+                                fontSize: 8.5,
+                                fontWeight: 600,
+                                padding: "2px 6px",
+                                borderRadius: 12,
+                                background: "rgba(255, 255, 255, 0.05)",
+                                color: "rgba(255, 255, 255, 0.6)",
+                                border: "1px solid rgba(255, 255, 255, 0.1)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3
+                              }}>
+                                <Calendar size={9} />
+                                {m.fecha_inicio ? new Date(m.fecha_inicio + "T00:00:00").toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : "?"} - {m.fecha_fin ? new Date(m.fecha_fin + "T00:00:00").toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : "?"}
+                              </span>
+                            )}
+
+                            {/* Horario */}
+                            {m.horario && (
+                              <span style={{
+                                fontSize: 8.5,
+                                fontWeight: 600,
+                                padding: "2px 6px",
+                                borderRadius: 12,
+                                background: "rgba(16, 185, 129, 0.1)",
+                                color: "#34d399",
+                                border: "1px solid rgba(16, 185, 129, 0.15)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3
+                              }}>
+                                <Clock size={9} />
+                                {m.horario}
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ fontSize: 9.5, color: "rgba(74,179,216,0.6)", marginTop: 8, fontWeight: 700, letterSpacing: "0.02em" }}>
+                            CARRERA: {m.carreras?.nombre.toUpperCase() || "SIN CARRERA"}
+                          </div>
+                          {m.aula && (
+                            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+                              Aula: <strong style={{ color: "#fff" }}>{m.aula}</strong> {m.local ? `(${m.local})` : ""}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 12 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
+                            <span>CONCEPTOS CONFIGURADOS</span>
+                            <span style={{ color: "#dbeafe" }}>S/ {totalCargos.toFixed(2)}</span>
+                          </div>
+
+                          {cargos.length === 0 ? (
+                            <div style={{ padding: "16px 0", textAlign: "center", color: "rgba(255,255,255,0.25)", fontSize: 11, border: "1px dashed rgba(255,255,255,0.04)", borderRadius: 8 }}>
+                              Sin cargos. Los alumnos no acumularán deuda.
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {cargos.map(c => (
+                                <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 8 }}>
+                                  <div>
+                                    <span style={{
+                                      fontSize: 8.5,
+                                      fontWeight: 700,
+                                      padding: "2px 6px",
+                                      borderRadius: 3,
+                                      background: c.concepto === "MATRICULA" ? "rgba(59,130,246,0.12)" : c.concepto === "OTROS" ? "rgba(107,114,128,0.15)" : "rgba(16,185,129,0.12)",
+                                      color: c.concepto === "MATRICULA" ? "#60a5fa" : c.concepto === "OTROS" ? "#9ca3af" : "#34d399",
+                                      border: c.concepto === "MATRICULA" ? "1px solid rgba(59,130,246,0.15)" : c.concepto === "OTROS" ? "1px solid rgba(107,114,128,0.15)" : "1px solid rgba(16,185,129,0.15)"
+                                    }}>
+                                      {c.concepto}
+                                    </span>
+                                    <div style={{ fontSize: 11, color: "#fff", fontWeight: 700, marginTop: 4 }}>
+                                      S/ {Number(c.monto).toFixed(2)}
+                                    </div>
+                                    {c.descripcion && (
+                                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>{c.descripcion}</div>
+                                    )}
+                                  </div>
+                                  {activeTab === "configuracion" && (
+                                    <button
+                                      onClick={() => handleDeleteCargo(c.id)}
+                                      style={{
+                                        background: "transparent", border: "none", color: "rgba(248,113,113,0.5)",
+                                        padding: 6, cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center"
+                                      }}
+                                      title="Eliminar Concepto"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {activeTab === "configuracion" ? (
+                          <button
+                            onClick={() => openNewCargo(m.id)}
+                            style={{
+                              width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+                              borderRadius: 8, padding: "8px 12px", color: "#fff", fontSize: 10, fontWeight: 700,
+                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                              marginTop: "auto"
+                            }}
+                          >
+                            <Plus size={12} /> Agregar Concepto de Cobro
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => loadModuleFinances(m)}
+                            style={{
+                              width: "100%", background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.3)",
+                              borderRadius: 8, padding: "8px 12px", color: "#60a5fa", fontSize: 10, fontWeight: 700,
+                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                              marginTop: "auto"
+                            }}
+                          >
+                            <Users size={12} /> Ver Estado del Grupo
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {/* Controles para expandir/colapsar todas las carpetas */}
+                  <div style={{ display: "flex", gap: 16, justifyContent: "flex-end" }}>
                     <button
                       type="button"
-                      onClick={() => setExpandedGroups(prev => ({ ...prev, [topKey]: !isTopOpen }))}
-                      style={{
-                        width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                        padding: "14px 20px", background: "rgba(255,255,255,0.02)", border: "none", cursor: "pointer",
-                        textAlign: "left", transition: "background 0.2s"
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
-                      onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        {isTopOpen ? (
-                          <FolderOpen size={18} style={{ color: "#4ab3d8" }} />
-                        ) : (
-                          <Folder size={18} style={{ color: "#4ab3d8" }} />
-                        )}
-                        <div>
-                          <span style={{ fontSize: 13, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                            {groupByConfig === "aula" ? `AULA: ${topKey}` : `${topKey}`}
-                          </span>
-                          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
-                            {totalModulesInTop} {totalModulesInTop === 1 ? "módulo" : "módulos"} • Cargos configurados: S/ {totalCargosInTop.toFixed(2)}
-                          </div>
-                        </div>
-                      </div>
-                      <div>
-                        {isTopOpen ? (
-                          <ChevronDown size={18} style={{ color: "rgba(255,255,255,0.4)" }} />
-                        ) : (
-                          <ChevronRight size={18} style={{ color: "rgba(255,255,255,0.4)" }} />
-                        )}
-                      </div>
-                    </button>
-
-                    {/* Contenido de nivel superior (Carpetas internas) */}
-                    {isTopOpen && (
-                      <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.15)", display: "flex", flexDirection: "column", gap: 12 }}>
-                        {Object.keys(subGroups).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(subKey => {
-                          const subModules = subGroups[subKey];
-                          const subGroupFullKey = `${topKey}::${subKey}`;
-                          const isSubOpen = !!expandedGroups[subGroupFullKey]; // Cerrado por defecto
-
-                          const totalModulesInSub = subModules.length;
-                          let totalCargosInSub = 0;
-                          subModules.forEach(m => {
-                            const cargos = allCargos.filter(c => c.modulo_id === m.id);
-                            totalCargosInSub += cargos.reduce((s, c) => s + Number(c.monto), 0);
+                      onClick={() => {
+                        const next: Record<string, boolean> = {};
+                        Object.keys(nestedGroupedModulos).forEach(topKey => {
+                          next[topKey] = true;
+                          Object.keys(nestedGroupedModulos[topKey]).forEach(subKey => {
+                            next[`${topKey}::${subKey}`] = true;
                           });
-
-                          return (
-                            <div key={subKey} style={{ border: "1px solid rgba(255,255,255,0.05)", borderRadius: 10, background: "rgba(10,22,44,0.35)", overflow: "hidden" }}>
-                              {/* Sub-header de la carpeta */}
-                              <button
-                                type="button"
-                                onClick={() => setExpandedGroups(prev => ({ ...prev, [subGroupFullKey]: !isSubOpen }))}
-                                style={{
-                                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                                  padding: "10px 16px", background: "rgba(255,255,255,0.01)", border: "none", cursor: "pointer",
-                                  textAlign: "left", transition: "background 0.2s"
-                                }}
-                                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
-                                onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.01)"}
-                              >
-                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  {isSubOpen ? (
-                                    <FolderOpen size={16} style={{ color: "#74b9ff" }} />
-                                  ) : (
-                                    <Folder size={16} style={{ color: "#74b9ff" }} />
-                                  )}
-                                  <div>
-                                    <span style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0", textTransform: "uppercase" }}>
-                                      {groupByConfig === "carrera" ? `AULA: ${subKey}` : `${subKey}`}
-                                    </span>
-                                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginLeft: 8 }}>
-                                      ({totalModulesInSub} {totalModulesInSub === 1 ? "módulo" : "módulos"} • S/ {totalCargosInSub.toFixed(2)})
-                                    </span>
-                                  </div>
-                                </div>
-                                <div>
-                                  {isSubOpen ? (
-                                    <ChevronDown size={16} style={{ color: "rgba(255,255,255,0.3)" }} />
-                                  ) : (
-                                    <ChevronRight size={16} style={{ color: "rgba(255,255,255,0.3)" }} />
-                                  )}
-                                </div>
-                              </button>
-
-                              {/* Grid de módulos en sub-nivel */}
-                              {isSubOpen && (
-                                <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,0.03)", background: "rgba(0,0,0,0.1)" }}>
-                                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-                                    {subModules.map(m => {
-                                      const cargos = allCargos.filter(c => c.modulo_id === m.id);
-                                      const totalCargos = cargos.reduce((s, c) => s + Number(c.monto), 0);
-
-                                      return (
-                                        <div key={m.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 18, background: "#090f1a", display: "flex", flexDirection: "column", gap: 12 }}>
-                                          <div>
-                                            <div style={{ fontWeight: 800, fontSize: 13.5, color: "#dbeafe", lineHeight: 1.3 }}>{m.nombre.toUpperCase()}</div>
-                                            
-                                            {/* Etiquetas */}
-                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
-                                              {/* Modalidad */}
-                                              <span style={{
-                                                fontSize: 8.5,
-                                                fontWeight: 700,
-                                                padding: "2px 6px",
-                                                borderRadius: 12,
-                                                textTransform: "uppercase",
-                                                background: m.modalidad === "virtual" ? "rgba(139, 92, 246, 0.15)" : m.modalidad === "semipresencial" ? "rgba(245, 158, 11, 0.15)" : "rgba(59, 130, 246, 0.15)",
-                                                color: m.modalidad === "virtual" ? "#a78bfa" : m.modalidad === "semipresencial" ? "#fbbf24" : "#60a5fa",
-                                                border: `1px solid ${m.modalidad === "virtual" ? "rgba(139, 92, 246, 0.2)" : m.modalidad === "semipresencial" ? "rgba(245, 158, 11, 0.2)" : "rgba(59, 130, 246, 0.2)"}`
-                                              }}>
-                                                {m.modalidad}
-                                              </span>
-
-                                              {/* Fechas */}
-                                              {(m.fecha_inicio || m.fecha_fin) && (
-                                                <span style={{
-                                                  fontSize: 8.5,
-                                                  fontWeight: 600,
-                                                  padding: "2px 6px",
-                                                  borderRadius: 12,
-                                                  background: "rgba(255, 255, 255, 0.05)",
-                                                  color: "rgba(255, 255, 255, 0.6)",
-                                                  border: "1px solid rgba(255, 255, 255, 0.1)",
-                                                  display: "inline-flex",
-                                                  alignItems: "center",
-                                                  gap: 3
-                                                }}>
-                                                  <Calendar size={9} />
-                                                  {m.fecha_inicio ? new Date(m.fecha_inicio + "T00:00:00").toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : "?"} - {m.fecha_fin ? new Date(m.fecha_fin + "T00:00:00").toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : "?"}
-                                                </span>
-                                              )}
-
-                                              {/* Horario */}
-                                              {m.horario && (
-                                                <span style={{
-                                                  fontSize: 8.5,
-                                                  fontWeight: 600,
-                                                  padding: "2px 6px",
-                                                  borderRadius: 12,
-                                                  background: "rgba(16, 185, 129, 0.1)",
-                                                  color: "#34d399",
-                                                  border: "1px solid rgba(16, 185, 129, 0.15)",
-                                                  display: "inline-flex",
-                                                  alignItems: "center",
-                                                  gap: 3
-                                                }}>
-                                                  <Clock size={9} />
-                                                  {m.horario}
-                                                </span>
-                                              )}
-                                            </div>
-
-                                            <div style={{ fontSize: 9.5, color: "rgba(74,179,216,0.6)", marginTop: 8, fontWeight: 700, letterSpacing: "0.02em" }}>
-                                              CARRERA: {m.carreras?.nombre.toUpperCase() || "SIN CARRERA"}
-                                            </div>
-                                            {m.aula && (
-                                              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
-                                                Aula: <strong style={{ color: "#fff" }}>{m.aula}</strong> {m.local ? `(${m.local})` : ""}
-                                              </div>
-                                            )}
-                                          </div>
-
-                                          <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10 }}>
-                                            <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
-                                              <span>CONCEPTOS CONFIGURADOS</span>
-                                              <span style={{ color: "#dbeafe" }}>S/ {totalCargos.toFixed(2)}</span>
-                                            </div>
-
-                                            {cargos.length === 0 ? (
-                                              <div style={{ padding: "12px 0", textAlign: "center", color: "rgba(255,255,255,0.25)", fontSize: 10.5, border: "1px dashed rgba(255,255,255,0.04)", borderRadius: 8 }}>
-                                                Sin cargos. Los alumnos no acumularán deuda.
-                                              </div>
-                                            ) : (
-                                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                                {cargos.map(c => (
-                                                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 8 }}>
-                                                    <div>
-                                                      <span style={{ 
-                                                        fontSize: 8, 
-                                                        fontWeight: 700, 
-                                                        padding: "1.5px 5px", 
-                                                        borderRadius: 3, 
-                                                        background: c.concepto === "MATRICULA" ? "rgba(59,130,246,0.12)" : c.concepto === "OTROS" ? "rgba(107,114,128,0.15)" : "rgba(16,185,129,0.12)",
-                                                        color: c.concepto === "MATRICULA" ? "#60a5fa" : c.concepto === "OTROS" ? "#9ca3af" : "#34d399",
-                                                        border: c.concepto === "MATRICULA" ? "1px solid rgba(59,130,246,0.15)" : c.concepto === "OTROS" ? "1px solid rgba(107,114,128,0.15)" : "1px solid rgba(16,185,129,0.15)"
-                                                      }}>
-                                                        {c.concepto}
-                                                      </span>
-                                                      <div style={{ fontSize: 10.5, color: "#fff", fontWeight: 700, marginTop: 3 }}>
-                                                        S/ {Number(c.monto).toFixed(2)}
-                                                      </div>
-                                                      {c.descripcion && (
-                                                        <div style={{ fontSize: 9.5, color: "rgba(255,255,255,0.35)", marginTop: 1.5 }}>{c.descripcion}</div>
-                                                      )}
-                                                    </div>
-                                                    <button
-                                                      onClick={() => handleDeleteCargo(c.id)}
-                                                      style={{
-                                                        background: "transparent", border: "none", color: "rgba(248,113,113,0.5)",
-                                                        padding: 4, cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center"
-                                                      }}
-                                                      title="Eliminar Concepto"
-                                                    >
-                                                      <Trash2 size={12} />
-                                                    </button>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            )}
-                                          </div>
-
-                                          <button
-                                            onClick={() => openNewCargo(m.id)}
-                                            style={{
-                                              width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-                                              borderRadius: 8, padding: "7px 10px", color: "#fff", fontSize: 9.5, fontWeight: 700,
-                                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                                              marginTop: "auto"
-                                            }}
-                                          >
-                                            <Plus size={11} /> Agregar Concepto de Cobro
-                                          </button>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                        });
+                        setExpandedGroups(next);
+                      }}
+                      style={{
+                        background: "transparent", border: "none", color: "#4ab3d8", fontSize: 11, cursor: "pointer", fontWeight: 600
+                      }}
+                    >
+                      [+] Abrir todas las carpetas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next: Record<string, boolean> = {};
+                        Object.keys(nestedGroupedModulos).forEach(topKey => {
+                          next[topKey] = false;
+                          Object.keys(nestedGroupedModulos[topKey]).forEach(subKey => {
+                            next[`${topKey}::${subKey}`] = false;
+                          });
+                        });
+                        setExpandedGroups(next);
+                      }}
+                      style={{
+                        background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 11, cursor: "pointer", fontWeight: 600
+                      }}
+                    >
+                      [-] Cerrar todas las carpetas
+                    </button>
                   </div>
-                );
-              })}
-            </div>
-          )}
 
-          {/* MODAL: CREAR CONCEPTO DE COBRO */}
-          <Modal open={showCargoForm} onClose={() => setShowCargoForm(false)} title="Agregar Concepto de Cobro" maxWidth="450px">
-            <form onSubmit={handleCreateCargo} className="space-y-4" style={{ fontFamily: "'Inter', sans-serif" }}>
-              <div>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(74,179,216,0.8)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>CONCEPTO / MOTIVO *</label>
-                <select 
-                  value={cargoForm.concepto} 
-                  onChange={e => setCargoForm(p => ({ ...p, concepto: e.target.value }))} 
-                  required 
-                  className="w-full h-10 text-sm bg-blue-950 bg-opacity-50 border border-blue-800 rounded-lg text-white outline-none" 
-                  style={{ padding: "0 12px" }}
-                >
-                  <option value="PENSION">PENSIÓN (MENSUALIDAD)</option>
-                  <option value="MATRICULA">MATRÍCULA</option>
-                  <option value="OTROS">OTROS</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(74,179,216,0.8)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>MONTO A COBRAR (S/) *</label>
-                <input 
-                  type="number" 
-                  min="0" 
-                  step="0.01" 
-                  required
-                  placeholder="0.00"
-                  value={cargoForm.monto} 
-                  onChange={e => setCargoForm(p => ({ ...p, monto: e.target.value }))} 
-                  className="w-full h-10 text-sm bg-blue-950 bg-opacity-50 border border-blue-800 rounded-lg text-white outline-none" 
-                  style={{ padding: "0 12px" }} 
-                />
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(74,179,216,0.8)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>DESCRIPCIÓN / DETALLE</label>
-                <input 
-                  placeholder="Ej: Cuota 1, Matrícula Semestre I, etc."
-                  value={cargoForm.descripcion} 
-                  onChange={e => setCargoForm(p => ({ ...p, descripcion: e.target.value }))} 
-                  className="w-full h-10 text-sm bg-blue-950 bg-opacity-50 border border-blue-800 rounded-lg text-white outline-none" 
-                  style={{ padding: "0 12px" }} 
-                />
-              </div>
-              <div className="flex justify-end gap-3 border-t border-blue-900 border-opacity-30" style={{ paddingTop: 16 }}>
-                <button type="button" onClick={() => setShowCargoForm(false)} className="text-xs font-bold text-blue-300 hover:text-white transition-colors" style={{ padding: "8px 16px", background: "transparent", border: "none", cursor: "pointer" }}>Cancelar</button>
-                <button type="submit" disabled={submittingCargo} className="text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg flex items-center gap-2 transition-colors" style={{ padding: "8px 20px", border: "none", cursor: "pointer", borderRadius: 8 }}>
-                  <Plus size={14} /> {submittingCargo ? "Creando..." : "Crear Concepto"}
-                </button>
-              </div>
-            </form>
-          </Modal>
+                  {Object.keys(nestedGroupedModulos).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(topKey => {
+                    const subGroups = nestedGroupedModulos[topKey];
+                    const isTopOpen = !!expandedGroups[topKey]; // Cerrado por defecto
+
+                    // Calcular total módulos y cargos configurados en este grupo de nivel superior
+                    let totalModulesInTop = 0;
+                    let totalCargosInTop = 0;
+                    Object.keys(subGroups).forEach(subKey => {
+                      const subModules = subGroups[subKey];
+                      totalModulesInTop += subModules.length;
+                      subModules.forEach(m => {
+                        const cargos = allCargos.filter(c => c.modulo_id === m.id);
+                        totalCargosInTop += cargos.reduce((s, c) => s + Number(c.monto), 0);
+                      });
+                    });
+
+                    return (
+                      <div key={topKey} style={{ border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, background: "rgba(8,16,34,0.45)", overflow: "hidden" }}>
+                        {/* Header de la carpeta de nivel superior */}
+                        <button
+                          type="button"
+                          onClick={() => setExpandedGroups(prev => ({ ...prev, [topKey]: !isTopOpen }))}
+                          style={{
+                            width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                            padding: "14px 20px", background: "rgba(255,255,255,0.02)", border: "none", cursor: "pointer",
+                            textAlign: "left", transition: "background 0.2s"
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
+                          onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            {isTopOpen ? (
+                              <FolderOpen size={18} style={{ color: "#4ab3d8" }} />
+                            ) : (
+                              <Folder size={18} style={{ color: "#4ab3d8" }} />
+                            )}
+                            <div>
+                              <span style={{ fontSize: 13, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                                {groupByConfig === "aula" ? `AULA: ${topKey}` : `${topKey}`}
+                              </span>
+                              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
+                                {totalModulesInTop} {totalModulesInTop === 1 ? "módulo" : "módulos"} • Cargos configurados: S/ {totalCargosInTop.toFixed(2)}
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            {isTopOpen ? (
+                              <ChevronDown size={18} style={{ color: "rgba(255,255,255,0.4)" }} />
+                            ) : (
+                              <ChevronRight size={18} style={{ color: "rgba(255,255,255,0.4)" }} />
+                            )}
+                          </div>
+                        </button>
+
+                        {/* Contenido de nivel superior (Carpetas internas) */}
+                        {isTopOpen && (
+                          <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.15)", display: "flex", flexDirection: "column", gap: 12 }}>
+                            {Object.keys(subGroups).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map(subKey => {
+                              const subModules = subGroups[subKey];
+                              const subGroupFullKey = `${topKey}::${subKey}`;
+                              const isSubOpen = !!expandedGroups[subGroupFullKey]; // Cerrado por defecto
+
+                              const totalModulesInSub = subModules.length;
+                              let totalCargosInSub = 0;
+                              subModules.forEach(m => {
+                                const cargos = allCargos.filter(c => c.modulo_id === m.id);
+                                totalCargosInSub += cargos.reduce((s, c) => s + Number(c.monto), 0);
+                              });
+
+                              return (
+                                <div key={subKey} style={{ border: "1px solid rgba(255,255,255,0.05)", borderRadius: 10, background: "rgba(10,22,44,0.35)", overflow: "hidden" }}>
+                                  {/* Sub-header de la carpeta */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedGroups(prev => ({ ...prev, [subGroupFullKey]: !isSubOpen }))}
+                                    style={{
+                                      width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                                      padding: "10px 16px", background: "rgba(255,255,255,0.01)", border: "none", cursor: "pointer",
+                                      textAlign: "left", transition: "background 0.2s"
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
+                                    onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.01)"}
+                                  >
+                                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                      {isSubOpen ? (
+                                        <FolderOpen size={16} style={{ color: "#74b9ff" }} />
+                                      ) : (
+                                        <Folder size={16} style={{ color: "#74b9ff" }} />
+                                      )}
+                                      <div>
+                                        <span style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0", textTransform: "uppercase" }}>
+                                          {groupByConfig === "carrera" ? `AULA: ${subKey}` : `${subKey}`}
+                                        </span>
+                                        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginLeft: 8 }}>
+                                          ({totalModulesInSub} {totalModulesInSub === 1 ? "módulo" : "módulos"} • S/ {totalCargosInSub.toFixed(2)})
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      {isSubOpen ? (
+                                        <ChevronDown size={16} style={{ color: "rgba(255,255,255,0.3)" }} />
+                                      ) : (
+                                        <ChevronRight size={16} style={{ color: "rgba(255,255,255,0.3)" }} />
+                                      )}
+                                    </div>
+                                  </button>
+
+                                  {/* Grid de módulos en sub-nivel */}
+                                  {isSubOpen && (
+                                    <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,0.03)", background: "rgba(0,0,0,0.1)" }}>
+                                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+                                        {subModules.map(m => {
+                                          const cargos = allCargos.filter(c => c.modulo_id === m.id);
+                                          const totalCargos = cargos.reduce((s, c) => s + Number(c.monto), 0);
+
+                                          return (
+                                            <div key={m.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 18, background: "#090f1a", display: "flex", flexDirection: "column", gap: 12 }}>
+                                              <div>
+                                                <div style={{ fontWeight: 800, fontSize: 13.5, color: "#dbeafe", lineHeight: 1.3 }}>{m.nombre.toUpperCase()}</div>
+
+                                                {/* Etiquetas */}
+                                                <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
+                                                  {/* Modalidad */}
+                                                  <span style={{
+                                                    fontSize: 8.5,
+                                                    fontWeight: 700,
+                                                    padding: "2px 6px",
+                                                    borderRadius: 12,
+                                                    textTransform: "uppercase",
+                                                    background: m.modalidad === "virtual" ? "rgba(139, 92, 246, 0.15)" : m.modalidad === "semipresencial" ? "rgba(245, 158, 11, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                                                    color: m.modalidad === "virtual" ? "#a78bfa" : m.modalidad === "semipresencial" ? "#fbbf24" : "#60a5fa",
+                                                    border: `1px solid ${m.modalidad === "virtual" ? "rgba(139, 92, 246, 0.2)" : m.modalidad === "semipresencial" ? "rgba(245, 158, 11, 0.2)" : "rgba(59, 130, 246, 0.2)"}`
+                                                  }}>
+                                                    {m.modalidad}
+                                                  </span>
+
+                                                  {/* Fechas */}
+                                                  {(m.fecha_inicio || m.fecha_fin) && (
+                                                    <span style={{
+                                                      fontSize: 8.5,
+                                                      fontWeight: 600,
+                                                      padding: "2px 6px",
+                                                      borderRadius: 12,
+                                                      background: "rgba(255, 255, 255, 0.05)",
+                                                      color: "rgba(255, 255, 255, 0.6)",
+                                                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                                                      display: "inline-flex",
+                                                      alignItems: "center",
+                                                      gap: 3
+                                                    }}>
+                                                      <Calendar size={9} />
+                                                      {m.fecha_inicio ? new Date(m.fecha_inicio + "T00:00:00").toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : "?"} - {m.fecha_fin ? new Date(m.fecha_fin + "T00:00:00").toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : "?"}
+                                                    </span>
+                                                  )}
+
+                                                  {/* Horario */}
+                                                  {m.horario && (
+                                                    <span style={{
+                                                      fontSize: 8.5,
+                                                      fontWeight: 600,
+                                                      padding: "2px 6px",
+                                                      borderRadius: 12,
+                                                      background: "rgba(16, 185, 129, 0.1)",
+                                                      color: "#34d399",
+                                                      border: "1px solid rgba(16, 185, 129, 0.15)",
+                                                      display: "inline-flex",
+                                                      alignItems: "center",
+                                                      gap: 3
+                                                    }}>
+                                                      <Clock size={9} />
+                                                      {m.horario}
+                                                    </span>
+                                                  )}
+                                                </div>
+
+                                                <div style={{ fontSize: 9.5, color: "rgba(74,179,216,0.6)", marginTop: 8, fontWeight: 700, letterSpacing: "0.02em" }}>
+                                                  CARRERA: {m.carreras?.nombre.toUpperCase() || "SIN CARRERA"}
+                                                </div>
+                                                {m.aula && (
+                                                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+                                                    Aula: <strong style={{ color: "#fff" }}>{m.aula}</strong> {m.local ? `(${m.local})` : ""}
+                                                  </div>
+                                                )}
+                                              </div>
+
+                                              <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10 }}>
+                                                <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+                                                  <span>CONCEPTOS CONFIGURADOS</span>
+                                                  <span style={{ color: "#dbeafe" }}>S/ {totalCargos.toFixed(2)}</span>
+                                                </div>
+
+                                                {cargos.length === 0 ? (
+                                                  <div style={{ padding: "12px 0", textAlign: "center", color: "rgba(255,255,255,0.25)", fontSize: 10.5, border: "1px dashed rgba(255,255,255,0.04)", borderRadius: 8 }}>
+                                                    Sin cargos. Los alumnos no acumularán deuda.
+                                                  </div>
+                                                ) : (
+                                                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                                    {cargos.map(c => (
+                                                      <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 8 }}>
+                                                        <div>
+                                                          <span style={{
+                                                            fontSize: 8,
+                                                            fontWeight: 700,
+                                                            padding: "1.5px 5px",
+                                                            borderRadius: 3,
+                                                            background: c.concepto === "MATRICULA" ? "rgba(59,130,246,0.12)" : c.concepto === "OTROS" ? "rgba(107,114,128,0.15)" : "rgba(16,185,129,0.12)",
+                                                            color: c.concepto === "MATRICULA" ? "#60a5fa" : c.concepto === "OTROS" ? "#9ca3af" : "#34d399",
+                                                            border: c.concepto === "MATRICULA" ? "1px solid rgba(59,130,246,0.15)" : c.concepto === "OTROS" ? "1px solid rgba(107,114,128,0.15)" : "1px solid rgba(16,185,129,0.15)"
+                                                          }}>
+                                                            {c.concepto}
+                                                          </span>
+                                                          <div style={{ fontSize: 10.5, color: "#fff", fontWeight: 700, marginTop: 3 }}>
+                                                            S/ {Number(c.monto).toFixed(2)}
+                                                          </div>
+                                                          {c.descripcion && (
+                                                            <div style={{ fontSize: 9.5, color: "rgba(255,255,255,0.35)", marginTop: 1.5 }}>{c.descripcion}</div>
+                                                          )}
+                                                        </div>
+                                                        {activeTab === "configuracion" && (
+                                                          <button
+                                                            onClick={() => handleDeleteCargo(c.id)}
+                                                            style={{
+                                                              background: "transparent", border: "none", color: "rgba(248,113,113,0.5)",
+                                                              padding: 4, cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center"
+                                                            }}
+                                                            title="Eliminar Concepto"
+                                                          >
+                                                            <Trash2 size={12} />
+                                                          </button>
+                                                        )}
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                )}
+                                              </div>
+
+                                              {activeTab === "configuracion" ? (
+                                                <button
+                                                  onClick={() => openNewCargo(m.id)}
+                                                  style={{
+                                                    width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+                                                    borderRadius: 8, padding: "7px 10px", color: "#fff", fontSize: 9.5, fontWeight: 700,
+                                                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                                                    marginTop: "auto"
+                                                  }}
+                                                >
+                                                  <Plus size={11} /> Agregar Concepto de Cobro
+                                                </button>
+                                              ) : (
+                                                <button
+                                                  onClick={() => loadModuleFinances(m)}
+                                                  style={{
+                                                    width: "100%", background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.3)",
+                                                    borderRadius: 8, padding: "7px 10px", color: "#60a5fa", fontSize: 9.5, fontWeight: 700,
+                                                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                                                    marginTop: "auto"
+                                                  }}
+                                                >
+                                                  <Users size={11} /> Ver Estado del Grupo
+                                                </button>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* MODAL: CREAR CONCEPTO DE COBRO */}
+              <Modal open={showCargoForm} onClose={() => setShowCargoForm(false)} title="Agregar Concepto de Cobro" maxWidth="450px">
+                <form onSubmit={handleCreateCargo} className="space-y-4" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(74,179,216,0.8)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>CONCEPTO / MOTIVO *</label>
+                    <select
+                      value={cargoForm.concepto}
+                      onChange={e => setCargoForm(p => ({ ...p, concepto: e.target.value }))}
+                      required
+                      className="w-full h-10 text-sm bg-blue-950 bg-opacity-50 border border-blue-800 rounded-lg text-white outline-none"
+                      style={{ padding: "0 12px" }}
+                    >
+                      <option value="PENSION">PENSIÓN (MENSUALIDAD)</option>
+                      <option value="MATRICULA">MATRÍCULA</option>
+                      <option value="OTROS">OTROS</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(74,179,216,0.8)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>MONTO A COBRAR (S/) *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      placeholder="0.00"
+                      value={cargoForm.monto}
+                      onChange={e => setCargoForm(p => ({ ...p, monto: e.target.value }))}
+                      className="w-full h-10 text-sm bg-blue-950 bg-opacity-50 border border-blue-800 rounded-lg text-white outline-none"
+                      style={{ padding: "0 12px" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(74,179,216,0.8)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>DESCRIPCIÓN / DETALLE</label>
+                    <input
+                      placeholder="Ej: Cuota 1, Matrícula Semestre I, etc."
+                      value={cargoForm.descripcion}
+                      onChange={e => setCargoForm(p => ({ ...p, descripcion: e.target.value }))}
+                      className="w-full h-10 text-sm bg-blue-950 bg-opacity-50 border border-blue-800 rounded-lg text-white outline-none"
+                      style={{ padding: "0 12px" }}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-3 border-t border-blue-900 border-opacity-30" style={{ paddingTop: 16 }}>
+                    <button type="button" onClick={() => setShowCargoForm(false)} className="text-xs font-bold text-blue-300 hover:text-white transition-colors" style={{ padding: "8px 16px", background: "transparent", border: "none", cursor: "pointer" }}>Cancelar</button>
+                    <button type="submit" disabled={submittingCargo} className="text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg flex items-center gap-2 transition-colors" style={{ padding: "8px 20px", border: "none", cursor: "pointer", borderRadius: 8 }}>
+                      <Plus size={14} /> {submittingCargo ? "Creando..." : "Crear Concepto"}
+                    </button>
+                  </div>
+                </form>
+              </Modal>
+            </>
+          )}
         </div>
       )}
     </div>

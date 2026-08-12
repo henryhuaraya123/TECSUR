@@ -14,7 +14,7 @@ interface Modulo {
   id: string; nombre: string; fecha_inicio: string; fecha_fin: string;
   modalidad: "presencial" | "virtual" | "semipresencial"; duracion?: string | null;
   carrera_id?: string | null; profesor?: string | null;
-  local?: string | null; aula?: string | null; horario?: string | null;
+  local?: string | null; aula?: string | null; horario?: string | null; turno?: string | null;
   carreras?: Carrera | null; cursos?: Curso[];
   docente_id?: string | null;
 }
@@ -45,7 +45,7 @@ const MODALIDAD_TEXT: Record<string, string> = {
 
 const emptyForm = {
   nombre: "", fecha_inicio: "", fecha_fin: "", modalidad: "presencial" as Modulo["modalidad"],
-  duracion: "", carrera_id: "", profesor: "", local: "AV. SAN MARTIN N° 817", aula: "", horario: ""
+  duracion: "", carrera_id: "", profesor: "", local: "AV. SAN MARTIN N° 817", aula: "", horario: "", turno: "mañana"
 };
 
 export default function ModulosView({
@@ -178,6 +178,7 @@ export default function ModulosView({
       local: form.local || null,
       aula: form.aula || null,
       horario: form.horario || null,
+      turno: form.turno || "mañana",
     };
     const res = await fetch("/api/modulos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await res.json(); setSubmitting(false);
@@ -200,6 +201,7 @@ export default function ModulosView({
       local: form.local || null,
       aula: form.aula || null,
       horario: form.horario || null,
+      turno: form.turno || "mañana",
     };
     const res = await fetch(`/api/modulos/${editTarget.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await res.json(); setSubmitting(false);
@@ -229,7 +231,8 @@ export default function ModulosView({
       profesor: m.profesor ?? "",
       local: m.local ?? "",
       aula: m.aula ?? "",
-      horario: m.horario ?? ""
+      horario: m.horario ?? "",
+      turno: m.turno ?? "mañana"
     });
     setShowForm(false);
   }
@@ -319,18 +322,21 @@ export default function ModulosView({
     }
     setSubmittingMatricula(true);
     try {
-      // Inferir turno del horario del módulo
-      let turno = "mañana";
-      const h = (viewingAlumnos.horario || "").toLowerCase();
-      if (h.includes("noche")) {
-        turno = "noche";
-      } else if (h.includes("tarde") && !h.includes("sab") && !h.includes("sáb") && !h.includes("dom")) {
-        turno = "tarde";
-      } else if (h.includes("sab") || h.includes("sáb") || h.includes("dom") || h.includes("fin de semana")) {
-        if (h.includes("full") || h.includes("completo") || h.includes("tarde")) {
-          turno = "sabado_domingo_full";
-        } else {
-          turno = "sabado_domingo_am";
+      // Priorizar el turno del módulo, de lo contrario inferir
+      let turno = viewingAlumnos.turno;
+      if (!turno) {
+        turno = "mañana";
+        const h = (viewingAlumnos.horario || "").toLowerCase();
+        if (h.includes("noche")) {
+          turno = "noche";
+        } else if (h.includes("tarde") && !h.includes("sab") && !h.includes("sáb") && !h.includes("dom")) {
+          turno = "tarde";
+        } else if (h.includes("sab") || h.includes("sáb") || h.includes("dom") || h.includes("fin de semana")) {
+          if (h.includes("full") || h.includes("completo") || h.includes("tarde")) {
+            turno = "sabado_domingo_full";
+          } else {
+            turno = "sabado_domingo_am";
+          }
         }
       }
 
@@ -934,7 +940,7 @@ export default function ModulosView({
                             <div style={{ color: "rgba(180,210,240,0.7)", fontSize: 12 }}>{mat.alumnos?.nombres}</div>
                           </td>
                           <td style={{ padding: "12px 16px", color: "rgba(180,210,240,0.8)" }}>{mat.alumnos?.celular || "—"}</td>
-                          <td style={{ padding: "12px 16px", color: "rgba(180,210,240,0.8)", textTransform: "capitalize" }}>{mat.turno?.replace(/_/g, " ")}</td>
+                          <td style={{ padding: "12px 16px", color: "rgba(180,210,240,0.8)", textTransform: "capitalize" }}>{(viewingAlumnos?.turno || mat.turno)?.replace(/_/g, " ")}</td>
                           <td style={{ padding: "12px 16px", color: "rgba(180,210,240,0.6)", fontSize: 12 }}>{mat.fecha_registro}</td>
                           <td style={{ padding: "12px 16px", textAlign: "right" }}>
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
@@ -1850,20 +1856,34 @@ export default function ModulosView({
               <label style={lbl}>Fecha Fin *</label>
               <input className="md-inp" style={inp} type="date" value={form.fecha_fin} onChange={e => setForm(p => ({ ...p, fecha_fin: e.target.value }))} required />
             </div>
-            <div style={{ gridColumn: "1/-1" }}>
-              <label style={lbl}>Horario *</label>
-              <input className="md-inp" style={inp} list="horario-sug" placeholder="Ej: Lunes a Viernes 8:00 AM - 12:00 PM" value={form.horario} onChange={e => setForm(p => ({ ...p, horario: e.target.value }))} required />
-              <datalist id="horario-sug">
-                <option value="Lunes a Viernes 8:00 AM - 12:00 PM" />
-                <option value="Lunes a Viernes 2:00 PM - 6:00 PM" />
-                <option value="Lunes a Viernes 6:00 PM - 10:00 PM" />
-                <option value="Sábados y Domingos 8:00 AM - 1:00 PM" />
-                <option value="Sábados y Domingos 2:00 PM - 7:00 PM" />
-                <option value="Sábados 8:00 AM - 1:00 PM" />
-                <option value="Sábados 2:00 PM - 7:00 PM" />
-                <option value="Domingos 8:00 AM - 1:00 PM" />
-                <option value="Domingos 2:00 PM - 7:00 PM" />
-              </datalist>
+            <div style={{ gridColumn: "1/-1", display: "grid", gridTemplateColumns: "3fr 1fr", gap: 16 }}>
+              <div>
+                <label style={lbl}>Horario *</label>
+                <input className="md-inp" style={inp} list="horario-sug" placeholder="Ej: Lunes a Viernes 8:00 AM - 12:00 PM" value={form.horario} onChange={e => setForm(p => ({ ...p, horario: e.target.value }))} required />
+                <datalist id="horario-sug">
+                  <option value="Lunes a Viernes 8:00 AM - 12:00 PM" />
+                  <option value="Lunes a Viernes 2:00 PM - 6:00 PM" />
+                  <option value="Lunes a Viernes 6:00 PM - 10:00 PM" />
+                  <option value="Sábados y Domingos 8:00 AM - 1:00 PM" />
+                  <option value="Sábados y Domingos 2:00 PM - 7:00 PM" />
+                  <option value="Sábados 8:00 AM - 1:00 PM" />
+                  <option value="Sábados 2:00 PM - 7:00 PM" />
+                  <option value="Domingos 8:00 AM - 1:00 PM" />
+                  <option value="Domingos 2:00 PM - 7:00 PM" />
+                </datalist>
+              </div>
+
+              <div>
+                <label style={lbl}>Turno</label>
+                <div style={{ position: "relative" }}>
+                  <select className="md-inp" style={{ ...inp, paddingRight: 32, cursor: "pointer" }} value={form.turno} onChange={e => setForm(p => ({ ...p, turno: e.target.value }))}>
+                    <option value="mañana">Mañana</option>
+                    <option value="tarde">Tarde</option>
+                    <option value="noche">Noche</option>
+                  </select>
+                  <ChevronDown size={12} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "rgba(74,179,216,0.5)" }} />
+                </div>
+              </div>
             </div>
             {/* El docente ahora se asigna por curso individual, no por módulo */}
 
@@ -1872,7 +1892,7 @@ export default function ModulosView({
               <input className="md-inp" style={inp} placeholder="Sede o local" value={form.local} onChange={e => setForm(p => ({ ...p, local: e.target.value }))} />
             </div>
             <div>
-              <label style={lbl}>Carpeta</label>
+              <label style={lbl}>Carpeta (Aula)</label>
               <input
                 className="md-inp"
                 style={inp}

@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("modulos")
     .select(selectQuery)
-    .order("fecha_inicio", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (carreraId) query = query.eq("carrera_id", carreraId);
   if (docenteId) query = query.eq("cursos.docente_id", docenteId);
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const {
     nombre, fecha_inicio, fecha_fin, modalidad, duracion,
-    carrera_id, profesor, local, aula, horario
+    carrera_id, profesor, local, aula, horario, turno
   } = body;
 
   if (!nombre || !fecha_inicio || !fecha_fin || !modalidad) {
@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
       local: local || null,
       aula: aula || null,
       horario: horario || null,
+      turno: turno || "mañana",
     }])
     .select(`*, carreras(id, nombre)`)
     .single();

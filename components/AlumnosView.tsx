@@ -21,6 +21,7 @@ import {
   Users,
   Layers,
   Download,
+  History,
 } from "lucide-react";
 import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
@@ -193,14 +194,14 @@ export default function AlumnosView() {
       const res = await fetch(`/api/alumnos?${params}`);
       const json = await res.json();
       const allAlums: Alumno[] = json.data || [];
-      
+
       const headers = [
-        "Codigo", "DNI", "Apellidos", "Nombres", "Carrera", 
-        "Celular", "Telefono", "Correo", "Fecha Nacimiento", 
-        "Nac Departamento", "Direccion", "Colegio", 
+        "Codigo", "DNI", "Apellidos", "Nombres", "Carrera",
+        "Celular", "Telefono", "Correo", "Fecha Nacimiento",
+        "Nac Departamento", "Direccion", "Colegio",
         "Apoderado", "Parentesco", "Apoderado Celular"
       ];
-      
+
       const csvRows = [
         headers.join(","),
         ...allAlums.map(a => {
@@ -227,7 +228,7 @@ export default function AlumnosView() {
           }).join(",");
         })
       ];
-      
+
       const csvContent = "\uFEFF" + csvRows.join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
@@ -716,11 +717,11 @@ export default function AlumnosView() {
                             <Layers size={12} />
                             Módulos
                           </button>
-                          <button className="ts-btn-secondary" style={{ ...secondaryBtn, padding: "5px 10px", fontSize: 11, background: "rgba(52,211,153,0.1)", borderColor: "rgba(52,211,153,0.25)", color: "#34d399", height: 28 }} title="Matricular" onClick={() => { setMatriculaTarget(a); setMatriculaForm(p => ({ ...p, alumno_id: a.id })); setModalMatricula(true); }}>
-                            <BookOpen size={12} />
-                            Matricular
+                          <button className="ts-btn-secondary" style={{ ...secondaryBtn, padding: "5px 10px", fontSize: 11, background: "rgba(52,211,153,0.1)", borderColor: "rgba(52,211,153,0.25)", color: "#34d399", height: 28 }} title="Reporte Histórico" onClick={() => window.open(`/reportes/historial?token=${btoa(`TS-${a.dni}`)}`, '_blank')}>
+                            <History size={12} />
+                            Reporte Histórico
                           </button>
-                          <ReporteFichaBtn alumnoId={a.id} label="Ficha" style={{ padding: "5px 10px", fontSize: 11, height: 28, boxSizing: "border-box" }} />
+                          <ReporteFichaBtn alumnoId={a.id} label="Ficha de Matrícula" style={{ padding: "5px 10px", fontSize: 11, height: 28, boxSizing: "border-box" }} />
                           <div style={{ display: "flex", gap: 4 }}>
                             <button className="ts-row-action" style={{ color: "rgba(74,179,216,0.6)" }} title="Ver detalle" onClick={() => { setVerTarget(a); setModalVer(true); }}>
                               <Eye size={13} />
@@ -1120,7 +1121,7 @@ export default function AlumnosView() {
                 })}
               </div>
             )}
-            
+
             <div style={{ display: "flex", justifyContent: "flex-end", borderTop: "1px solid rgba(42,109,181,.12)", paddingTop: 14 }}>
               <button className="ts-btn-secondary" style={secondaryBtn} onClick={() => { setModalMatriculados(false); setMatriculadosTarget(null); }}>Cerrar</button>
             </div>

@@ -10,7 +10,8 @@ interface Props {
 }
 
 export default function ReporteHistorialBtn({ dni, className, style, label = "Historial Académico" }: Props) {
-  const href = `/reportes/historial?dni=${dni}`;
+  const token = typeof window !== "undefined" ? btoa(`TS-${dni}`) : btoa(`TS-${dni}`);
+  const href = `/reportes/historial?token=${token}`;
   return (
     <Link
       href={href}
@@ -30,6 +31,8 @@ export default function ReporteHistorialBtn({ dni, className, style, label = "Hi
         whiteSpace: "nowrap",
         ...style
       }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(167, 139, 250, 0.2)"; e.currentTarget.style.borderColor = "rgba(167, 139, 250, 0.6)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(167, 139, 250, 0.1)"; e.currentTarget.style.borderColor = "rgba(167, 139, 250, 0.3)"; }}
       title="Historial de Notas Completo"
     >
       <FileText size={14} />

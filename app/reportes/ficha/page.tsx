@@ -12,10 +12,21 @@ function calculateAge(birthDateStr?: string | null) {
   return isNaN(age) ? "—" : `${age} años`;
 }
 
-export default async function ReporteFichaPage({ searchParams }: { searchParams: Promise<{ alumno?: string; matricula?: string }> }) {
+function normalizeText(text: string) {
+  return (text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+}
+
+const CARRERAS_INFO: Record<string, { duracion: string; matricula: string; mensualidad: string }> = {
+  "OPERACION Y MANTENIMIENTO DE MAQUINARIA PESADA": { duracion: "1 AÑO", matricula: "150.00", mensualidad: "400.00" },
+  "SEGURIDAD MINERA E INDUSTRIAL": { duracion: "1 AÑO", matricula: "150.00", mensualidad: "350.00" },
+  "TOPOGRAFIA Y GEODESIA": { duracion: "1 AÑO", matricula: "150.00", mensualidad: "450.00" }
+};
+
+export default async function ReporteFichaPage({ searchParams }: { searchParams: Promise<{ alumno?: string; matricula?: string; atendido_por?: string }> }) {
   const resolvedParams = await searchParams;
   const alumnoId = resolvedParams.alumno;
   const matriculaId = resolvedParams.matricula;
+  const atendidoPor = resolvedParams.atendido_por;
 
   if (!alumnoId && !matriculaId) {
     return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Error: Se requiere el ID del alumno o de la matrícula.</div>;
@@ -111,14 +122,24 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
     return `${day}/${month}/${year}`;
   };
 
+  const formatDateVerbose = (dateStr?: string | null) => {
+    if (!dateStr) return "—";
+    const date = new Date(dateStr + "T00:00:00");
+    if (isNaN(date.getTime())) return "—";
+    const months = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+    return `${date.getDate()} DE ${months[date.getMonth()]} DE ${date.getFullYear()}`;
+  };
+
   const fechaRegistro = matricula ? matricula.fecha_registro : alumno.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10);
-  const carrera = alumno.carrera;
-  const duracion = matricula?.modulos?.duracion ? String(matricula.modulos.duracion) : "—";
+  const carrera = alumno.carrera || "";
+  const carreraData = CARRERAS_INFO[normalizeText(carrera)] || { duracion: "", matricula: "", mensualidad: "" };
+  const duracion = carreraData.duracion || (matricula?.modulos?.duracion ? String(matricula.modulos.duracion) : "—");
   const turno = matricula ? matricula.turno : "—";
   const horario = matricula?.modulos?.horario || "—";
   const modalidad = matricula?.modulos?.modalidad || "—";
   const moduloNombre = matricula?.modulos?.nombre || "General / Por asignar";
   const moduloFechaInicio = matricula?.modulos?.fecha_inicio || null;
+  const celularOTelefono = alumno.celular || alumno.telefono || "—";
   const moduloFechaFin = matricula?.modulos?.fecha_fin || null;
 
   return (
@@ -228,7 +249,7 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
         }
 
         .field-value {
-          font-size: 11.5px;
+          font-size: 9px;
           color: #1d4ed8 !important; /* Azul para los datos extraídos */
           font-weight: 600;
           text-transform: uppercase;
@@ -285,7 +306,7 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
           flex: 1;
           padding: 8px;
           min-height: 48px;
-          font-size: 11px;
+          font-size: 9px;
           color: #1d4ed8;
           font-weight: 600;
         }
@@ -442,35 +463,35 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
         {/* Bloque 1: Datos de Matrícula */}
         <div className="field-grid">
           <div className="field-row">
-            <div className="field-cell" style={{ width: "25%" }}>
+            <div className="field-cell" style={{ width: "16%" }}>
               <span className="field-label">Fecha:</span>
               <span className="field-value">{formatDate(fechaRegistro)}</span>
             </div>
-            <div className="field-cell" style={{ width: "55%" }}>
+            <div className="field-cell" style={{ width: "54%" }}>
               <span className="field-label">Especialización:</span>
               <span className="field-value">{carrera}</span>
             </div>
-            <div className="field-cell" style={{ width: "20%" }}>
+            <div className="field-cell" style={{ width: "30%" }}>
               <span className="field-label">Duración:</span>
               <span className="field-value">{duracion}</span>
             </div>
           </div>
           <div className="field-row">
-            <div className="field-cell" style={{ width: "25%" }}>
+            <div className="field-cell" style={{ width: "16%" }}>
               <span className="field-label">Turno:</span>
               <span className="field-value">{formatTurno(turno)}</span>
             </div>
-            <div className="field-cell" style={{ width: "35%" }}>
+            <div className="field-cell" style={{ width: "28%" }}>
               <span className="field-label">Horario:</span>
               <span className="field-value">{horario}</span>
             </div>
-            <div className="field-cell" style={{ width: "20%" }}>
+            <div className="field-cell" style={{ width: "28%" }}>
               <span className="field-label">Modalidad:</span>
               <span className="field-value">{modalidad}</span>
             </div>
-            <div className="field-cell" style={{ width: "20%" }}>
+            <div className="field-cell" style={{ width: "28%" }}>
               <span className="field-label">Atendido por:</span>
-              <span className="field-value">Admisión</span>
+              <span className="field-value">{atendidoPor || "—"}</span>
             </div>
           </div>
         </div>
@@ -532,7 +553,7 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
             </div>
             <div className="field-cell" style={{ width: "32%" }}>
               <span className="field-label">Teléfono:</span>
-              <span className="field-value">{alumno.telefono || "—"}</span>
+              <span className="field-value">{celularOTelefono}</span>
             </div>
           </div>
 
@@ -550,7 +571,7 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
           <div className="field-row">
             <div className="field-cell" style={{ width: "27%" }}>
               <span className="field-label">Celular:</span>
-              <span className="field-value">{alumno.celular || "—"}</span>
+              <span className="field-value">{celularOTelefono}</span>
             </div>
             <div className="field-cell" style={{ width: "41%" }}>
               <span className="field-label">Facebook:</span>
@@ -614,67 +635,78 @@ export default async function ReporteFichaPage({ searchParams }: { searchParams:
         </div>
 
         {/* Sección: Inversión */}
-        <div className="section-bar" style={{ marginBottom: 0 }}>Inversión</div>
-        <div className="inversion-container">
+        <div className="section-bar" style={{ marginBottom: 0 }}>INVERSIÓN</div>
+        <div style={{ display: "flex", border: "1px solid #000", borderTop: "none", minHeight: "150px" }}>
           {/* Observaciones */}
-          <div className="inversion-col" style={{ width: "35%" }}>
-            <div className="inversion-title">Observaciones</div>
-            <div className="obs-content">
+          <div style={{ width: "35%", display: "flex", flexDirection: "column", borderRight: "1px solid #000" }}>
+            <div style={{ fontWeight: 800, fontSize: 11, textAlign: "center", borderBottom: "1px solid #000", padding: "4px 0", background: "#f3f4f6" }}>
+              Observaciones
+            </div>
+            <div style={{ padding: 8, fontSize: 11, flex: 1 }}>
             </div>
           </div>
 
           {/* Precio Real */}
-          <div className="inversion-col" style={{ width: "32.5%" }}>
-            <div className="inversion-title">Precio Real</div>
-
-            <div className="inv-row">
-              <span className="inv-label">Matrícula:</span>
-              <span className="inv-val">S/. 150.00</span>
+          <div style={{ width: "32.5%", display: "flex", flexDirection: "column", borderRight: "1px solid #000" }}>
+            <div style={{ fontWeight: 800, fontSize: 11, textAlign: "center", borderBottom: "1px solid #000", padding: "4px 0", background: "#f3f4f6" }}>
+              Precio Real
             </div>
-            <div className="inv-row">
-              <span className="inv-label">Mensualidad:</span>
-              <span className="inv-val">S/. 400.00</span>
-            </div>
-            <div className="inv-row">
-              <span className="inv-label">A cuenta:</span>
-              <span className="inv-val">S/. {totalPagado.toFixed(2)}</span>
-            </div>
-            <div className="inv-row">
-              <span className="inv-label">Saldo Pend:</span>
-              <span className="inv-val">S/. {saldoPendiente.toFixed(2)}</span>
-            </div>
-            <div className="inv-row">
-              <span className="inv-label">Fec. Venc:</span>
-              <span className="inv-val">{formatDate(moduloFechaFin)}</span>
-            </div>
-            <div className="inv-row">
-              <span className="inv-label">Fec. Inicio:</span>
-              <span className="inv-val">{formatDate(moduloFechaInicio)}</span>
+            <div style={{ display: "flex", flex: 1, flexDirection: "column" }}>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "50%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", borderRight: "1px solid #000", fontWeight: 600 }}>Matrícula:</div>
+                <div style={{ width: "50%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center" }}>
+                  S/. {carreraData.matricula && <span className="field-value" style={{ marginLeft: 4 }}>{carreraData.matricula}</span>}
+                </div>
+              </div>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "50%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", borderRight: "1px solid #000", fontWeight: 600 }}>Mensualidad:</div>
+                <div style={{ width: "50%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center" }}>
+                  S/. {carreraData.mensualidad && <span className="field-value" style={{ marginLeft: 4 }}>{carreraData.mensualidad}</span>}
+                </div>
+              </div>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "100%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", fontWeight: 600 }}>A cuenta:</div>
+              </div>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "100%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", fontWeight: 600 }}>Saldo Pendiente:</div>
+              </div>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "100%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", fontWeight: 600 }}>Fecha de Vencimiento:</div>
+              </div>
+              <div style={{ display: "flex", flex: 1 }}>
+                <div style={{ width: "100%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", fontWeight: 600 }}>Fecha de inicio de Módulo:</div>
+              </div>
             </div>
           </div>
 
           {/* Precio de Promoción */}
-          <div className="inversion-col" style={{ width: "32.5%" }}>
-            <div className="inversion-title">Precio de Promoción</div>
+          <div style={{ width: "32.5%", display: "flex", flexDirection: "column" }}>
+            <div style={{ fontWeight: 800, fontSize: 11, textAlign: "center", borderBottom: "1px solid #000", padding: "4px 0", background: "#f3f4f6" }}>
+              Precio de Promoción
+            </div>
+            <div style={{ display: "flex", flex: 1, flexDirection: "column" }}>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "50%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", borderRight: "1px solid #000", fontWeight: 600 }}>Matrícula: S/.</div>
+                <div style={{ width: "50%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", fontWeight: 600 }}>Boleta N°:</div>
+              </div>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "50%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", borderRight: "1px solid #000", fontWeight: 600 }}>Mensualidad: S/.</div>
+                <div style={{ width: "50%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", fontWeight: 600 }}>Boleta N°:</div>
+              </div>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "100%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", fontWeight: 600 }}>S/.</div>
+              </div>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "100%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center", fontWeight: 600 }}>S/.</div>
+              </div>
+              <div style={{ display: "flex", borderBottom: "1px solid #000", flex: 1 }}>
+                <div style={{ width: "100%", padding: "2px 8px", fontSize: 10, display: "flex", alignItems: "center" }}></div>
+              </div>
+              <div style={{ display: "flex", flex: 1 }}>
+                <div style={{ width: "100%", padding: "2px 8px", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", color: "#1d4ed8", fontWeight: "bold", textTransform: "uppercase" }}>
 
-            <div className="inv-input-row">
-              <div className="inv-inp-cell">Matrícula: S/.</div>
-              <div className="inv-inp-cell">Boleta N°:</div>
-            </div>
-            <div className="inv-input-row">
-              <div className="inv-inp-cell">Mensualidad: S/.</div>
-              <div className="inv-inp-cell">Boleta N°:</div>
-            </div>
-            <div className="inv-input-row">
-              <div className="inv-inp-cell">A cuenta: S/.</div>
-              <div className="inv-inp-cell">Boleta N°:</div>
-            </div>
-            <div className="inv-input-row">
-              <div className="inv-inp-cell">Saldo Pend: S/.</div>
-              <div className="inv-inp-cell">Boleta N°:</div>
-            </div>
-            <div className="inv-input-row" style={{ minHeight: 48 }}>
-              <div className="inv-inp-cell" style={{ width: "100%" }}>Vencimiento:</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

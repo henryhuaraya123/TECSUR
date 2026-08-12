@@ -1,25 +1,30 @@
 import { supabase } from "@/lib/supabase";
 
-const GRADES_IN_WORDS: Record<number, string> = {
-  0: "CERO", 1: "UNO", 2: "DOS", 3: "TRES", 4: "CUATRO",
-  5: "CINCO", 6: "SEIS", 7: "SIETE", 8: "OCHO", 9: "NUEVE",
-  10: "DIEZ", 11: "ONCE", 12: "DOCE", 13: "TRECE", 14: "CATORCE",
-  15: "QUINCE", 16: "DIECISÉIS", 17: "DIECISIETE", 18: "DIECIOCHO",
-  19: "DIECINUEVE", 20: "VEINTE"
-};
+
 
 function gradeToWords(grade: number | null | undefined): string {
   if (grade === null || grade === undefined) return "PENDIENTE";
   const rounded = Math.round(grade);
-  return GRADES_IN_WORDS[rounded] || "—";
+  if (rounded < 14) return "DESAPROBADO";
+  else return "APROBADO";
 }
 
-export default async function ReporteHistorialPage({ searchParams }: { searchParams: Promise<{ dni?: string }> }) {
+export default async function ReporteHistorialPage({ searchParams }: { searchParams: Promise<{ dni?: string, token?: string }> }) {
   const resolvedParams = await searchParams;
-  const dni = resolvedParams.dni;
+  let dni = resolvedParams.dni;
+  const token = resolvedParams.token;
+
+  if (!dni && token) {
+    try {
+      const decoded = Buffer.from(token, 'base64').toString('utf-8');
+      if (decoded.startsWith('TS-')) {
+        dni = decoded.substring(3); // Remove 'TS-'
+      }
+    } catch (e) { }
+  }
 
   if (!dni) {
-    return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Error: Se requiere el DNI del alumno.</div>;
+    return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Error: Se requiere el identificador del alumno (token o dni).</div>;
   }
 
   // 1. Cargar datos del alumno
@@ -73,7 +78,8 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
   return (
     <>
       <title>{`${alumno.apellidos}_${alumno.nombres}_RecordAcademico_${alumno.codigo || alumno.dni}`.toUpperCase().replace(/\s+/g, "_")}</title>
-      <style dangerouslySetInnerHTML={{__html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         body { margin: 0; padding: 0; background: #e5e7eb; font-family: 'Arial', sans-serif; color: #000; }
         .a4-container {
           background: #fff;
@@ -130,7 +136,7 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
       `}} />
 
       <div className="no-print" style={{ textAlign: "center", padding: "15px 0" }}>
-        <button 
+        <button
           id="print-btn"
           style={{ background: "#0066cc", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, boxShadow: "0 4px 6px -1px rgba(0,102,204,0.2)" }}
         >
@@ -150,12 +156,12 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
               <h2 className="record-title">RECORD ACADÉMICO</h2>
             </div>
             <div style={{ border: "1px solid #0066cc", padding: 3, borderRadius: 4, background: "#fff", display: "inline-block", flexShrink: 0 }}>
-              <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=70x70&data=${encodeURIComponent(
-                  `TECSUR Record Académico\nEstudiante: ${alumno.apellidos}, ${alumno.nombres}\nCódigo/DNI: ${alumno.codigo || alumno.dni}\nEspecialidad: ${alumno.carrera || "No asignada"}`
-                )}`} 
-                alt="QR Verificación" 
-                style={{ width: 70, height: 70, display: "block" }} 
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(
+                  `https://tecsur.edu.pe/reportes/historial?token=${token || Buffer.from(`TS-${dni}`).toString('base64')}`
+                )}`}
+                alt="QR Verificación"
+                style={{ width: 70, height: 70, display: "block" }}
               />
             </div>
           </div>
@@ -223,12 +229,12 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
                 cursos: c
               };
             });
-            
+
             // Cálculos del ciclo
             const validNotas = mergedNotas.filter((n: any) => n.nota !== null);
             const totalCreditos = mergedNotas.reduce((acc: number, n: any) => acc + (n.cursos?.creditos || 1), 0);
             const aprobadosCreditos = mergedNotas.reduce((acc: number, n: any) => acc + (n.nota !== null && n.nota >= 14 ? (n.cursos?.creditos || 1) : 0), 0);
-            
+
             let sumProd = 0;
             let sumCred = 0;
             validNotas.forEach((n: any) => {
@@ -246,7 +252,7 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
               const mModulo = Array.isArray(listaMatriculas[i].modulos) ? listaMatriculas[i].modulos[0] : listaMatriculas[i].modulos;
               const mCoursesOfModulo = (mModulo?.cursos || []).sort((a: any, b: any) => (a.orden || 0) - (b.orden || 0));
               const mNotas = notasMapByMatricula.get(mId) || [];
-              
+
               mCoursesOfModulo.forEach((c: any) => {
                 const existingNota = mNotas.find((n: any) => n.curso_id === c.id);
                 const gradeVal = existingNota ? existingNota.nota : null;
@@ -273,24 +279,23 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
             return (
               <div key={mat.id} style={{ pageBreakInside: "avoid" }}>
                 <div className="modulo-header-strip">
-                  MÓDULO {roman}: {modulo?.nombre} &nbsp;&nbsp;&nbsp;&nbsp;
+                  {modulo?.nombre} &nbsp;&nbsp;&nbsp;&nbsp;
                   <span style={{ fontSize: "11px", fontWeight: "normal", textTransform: "none", color: "#475569" }}>
                     (Del {formatLocaleDate(modulo?.fecha_inicio)} al {formatLocaleDate(modulo?.fecha_fin)})
                   </span>
                 </div>
-                
+
                 <table className="record-table">
                   <thead>
                     <tr>
                       <th rowSpan={2} style={{ width: "55%" }}>Curso</th>
-                      <th rowSpan={2} style={{ width: "8%", textAlign: "center" }}>Nivel</th>
                       <th rowSpan={2} style={{ width: "10%", textAlign: "center" }}>Créditos</th>
                       <th colSpan={2} style={{ width: "20%", textAlign: "center" }}>Promedio Final</th>
                       <th rowSpan={2} style={{ width: "7%", textAlign: "center" }}>Nº Veces</th>
                     </tr>
                     <tr>
-                      <th style={{ textAlign: "center", borderTop: "1px solid #0066cc" }}>Num.</th>
-                      <th style={{ textAlign: "center", borderTop: "1px solid #0066cc" }}>Letras</th>
+                      <th style={{ textAlign: "center", borderTop: "1px solid #0066cc" }}>NOTA</th>
+                      <th style={{ textAlign: "center", borderTop: "1px solid #0066cc" }}>ESTADO</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -308,7 +313,6 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
                             <td style={{ fontWeight: "bold" }}>
                               {n.cursos?.orden ? String(n.cursos.orden).padStart(3, "0") : "000"} - {n.cursos?.nombre.toUpperCase()}
                             </td>
-                            <td style={{ textAlign: "center" }}>{idxModulo + 1}</td>
                             <td style={{ textAlign: "center" }}>{(n.cursos?.creditos || 1).toFixed(1)}</td>
                             <td style={{ textAlign: "center", fontWeight: "bold" }} className={isFailed ? "grade-fail" : ""}>
                               {n.nota !== null ? String(n.nota).padStart(2, "0") : "—"}
@@ -330,15 +334,13 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
                       <th rowSpan={2} style={{ textAlign: "center", width: "10%" }}>Ciclo</th>
                       <th colSpan={2} style={{ textAlign: "center", width: "30%" }}>Créditos</th>
                       <th colSpan={2} style={{ textAlign: "center", width: "30%" }}>Ponderado</th>
-                      <th colSpan={2} style={{ textAlign: "center", width: "30%" }}>Mérito</th>
+
                     </tr>
                     <tr>
                       <th style={{ textAlign: "center" }}>Totales</th>
                       <th style={{ textAlign: "center" }}>Aprobados</th>
                       <th style={{ textAlign: "center" }}>Actual</th>
                       <th style={{ textAlign: "center" }}>Acumulado</th>
-                      <th style={{ textAlign: "center" }}>Orden</th>
-                      <th style={{ textAlign: "center" }}>Clasificación</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -348,8 +350,6 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
                       <td style={{ textAlign: "center" }}>{aprobadosCreditos.toFixed(2)}</td>
                       <td style={{ textAlign: "center", fontWeight: "bold" }}>{weightedAverage !== null ? weightedAverage.toFixed(2) : "—"}</td>
                       <td style={{ textAlign: "center", fontWeight: "bold" }}>{cumulativeWeightedAvg !== null ? cumulativeWeightedAvg.toFixed(2) : "—"}</td>
-                      <td style={{ textAlign: "center" }}>0</td>
-                      <td style={{ textAlign: "center" }}>-</td>
                     </tr>
                     <tr>
                       <td colSpan={7} style={{ textAlign: "left", fontSize: "10px", padding: "6px 10px", background: "#f9fafb" }}>
@@ -364,7 +364,8 @@ export default async function ReporteHistorialPage({ searchParams }: { searchPar
         )}
       </div>
 
-      <script dangerouslySetInnerHTML={{__html: `
+      <script dangerouslySetInnerHTML={{
+        __html: `
         document.getElementById('print-btn').addEventListener('click', function() {
           window.print();
         });

@@ -3,18 +3,22 @@ import { supabase } from "@/lib/supabase";
 
 export async function GET(request: NextRequest) {
   const alumnoId = request.nextUrl.searchParams.get("alumno_id");
+  const moduloId = request.nextUrl.searchParams.get("modulo_id");
 
   let query = supabase
     .from("pensiones")
     .select(`
       *,
-      alumnos (dni, nombres, apellidos),
+      alumnos (dni, nombres, apellidos, telefono, carrera),
       modulos (nombre)
     `)
     .order("fecha_pago", { ascending: false });
 
   if (alumnoId) {
     query = query.eq("alumno_id", alumnoId);
+  }
+  if (moduloId) {
+    query = query.eq("modulo_id", moduloId);
   }
 
   const { data, error } = await query;
