@@ -24,16 +24,25 @@ export default async function ReporteModuloPage({
     return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Error: No se encontró el módulo.</div>;
   }
 
-  // 2. Obtener alumnos matriculados
+  // 2. Obtener alumnos matriculados y ordenar alfabéticamente
   const { data: matriculas } = await supabase
     .from("matriculas")
     .select("id, turno, alumnos(dni, nombres, apellidos, carrera)")
-    .eq("modulo_id", moduloId)
-    .order("apellidos", { referencedTable: "alumnos", ascending: true });
+    .eq("modulo_id", moduloId);
 
-  const listaMatriculas = matriculas || [];
-  const carreraStr = listaMatriculas.length > 0 ? (listaMatriculas[0].alumnos as any).carrera : "NO ASIGNADA";
-  const turnoStr = listaMatriculas.length > 0 ? listaMatriculas[0].turno.replace(/_/g, " ") : "NO ASIGNADO";
+  const listaMatriculas = (matriculas || []).sort((a: any, b: any) => {
+    const apA = (a.alumnos?.apellidos || "").toLowerCase();
+    const apB = (b.alumnos?.apellidos || "").toLowerCase();
+    if (apA !== apB) return apA.localeCompare(apB);
+
+    const nomA = (a.alumnos?.nombres || "").toLowerCase();
+    const nomB = (b.alumnos?.nombres || "").toLowerCase();
+    return nomA.localeCompare(nomB);
+  });
+
+  const carreraStr = listaMatriculas.length > 0 ? (listaMatriculas[0].alumnos as any)?.carrera || "NO ASIGNADA" : "NO ASIGNADA";
+  const turnoStr = listaMatriculas.length > 0 ? (listaMatriculas[0].turno || "").replace(/_/g, " ") : "NO ASIGNADO";
+
   // 3. Obtener cursos del módulo
   const { data: cursos } = await supabase
     .from("cursos")
@@ -81,13 +90,10 @@ export default async function ReporteModuloPage({
         const fechaStr = actual.toISOString().split("T")[0];
 
         if (fechaStr <= hoyStr) {
-          // Si la fecha ya pasó o es hoy, SOLO la incluimos si hubo clases registradas
-          // Esto filtra automáticamente feriados, huelgas, fines de semana o días sin clases
           if (fechasSet.has(fechaStr)) {
             fechasValidas.push(fechaStr);
           }
         } else {
-          // Si es fecha futura, mostramos la plantilla vacía asumiendo Lunes a Viernes
           const day = actual.getDay();
           if (day !== 0 && day !== 6) {
             fechasValidas.push(fechaStr);
@@ -98,7 +104,7 @@ export default async function ReporteModuloPage({
     } catch (e) { }
   }
 
-  // Fallback si no hay fechas válidas o no se configuraron bien
+  // Fallback si no hay fechas válidas
   if (fechasValidas.length === 0) {
     fechasValidas = Array.from(fechasSet).sort();
   }
@@ -211,7 +217,7 @@ export default async function ReporteModuloPage({
               <tr>
                 <th rowSpan={2} className="bg-blue text-center">N°</th>
                 <th rowSpan={2} className="bg-blue text-center">APELLIDOS Y NOMBRES</th>
-                {listaCursos.map((c, i) => (
+                {listaCursos.map((c) => (
                   <th key={c.id} rowSpan={2} className="bg-gray vertical-text text-center">
                     {c.nombre.toUpperCase()} {c.creditos ? `(${c.creditos} CR)` : "(1 CR)"}
                   </th>
@@ -257,13 +263,13 @@ export default async function ReporteModuloPage({
                   fechasValidas.forEach(f => {
                     const est = asistenciaMap[m.id]?.[f];
                     if (est === "falta") inasis++;
-                    else if (!est) inasis++; // si la clase se dio pero el alumno no tiene registro, es falta
+                    else if (!est) inasis++;
                   });
 
                   return (
                     <tr key={m.id} style={{ backgroundColor: idx % 2 === 0 ? "#f3f4f6" : "#fff" }}>
                       <td className="text-center font-bold" style={{ borderRight: "2px solid #9ca3af" }}>{idx + 1}</td>
-                      <td style={{ fontWeight: "bold", borderRight: "2px solid #9ca3af" }}>{alum.apellidos}, {alum.nombres}</td>
+                      <td style={{ fontWeight: "bold", borderRight: "2px solid #9ca3af" }}>{alum?.apellidos}, {alum?.nombres}</td>
 
                       {/* Notas Cursos */}
                       {listaCursos.map(c => {
@@ -282,13 +288,12 @@ export default async function ReporteModuloPage({
 
                       <td className="text-center" style={{ borderRight: "2px solid #9ca3af" }}>{idx + 1}</td>
 
-                      {/* Asistencias (Check o Vacio) */}
+                      {/* Asistencias */}
                       {fechasValidas.length === 0 ? (
                         <td className="text-center"></td>
                       ) : (
                         fechasValidas.map(f => {
                           const est = asistenciaMap[m.id]?.[f];
-                          // Presente, Tardanza, Justificado cuentan como que asistió. Falta o vacio no se pinta
                           const asistio = est === "presente" || est === "tardanza" || est === "justificado";
                           return (
                             <td key={f} className="text-center" style={{ color: "black", fontWeight: "bold" }}>

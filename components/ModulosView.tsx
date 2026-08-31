@@ -1183,16 +1183,16 @@ export default function ModulosView({
                               background: "transparent",
                               border: "none",
                               cursor: "pointer",
-                              color: asistenciasMap[m.id] ? "#34d399" : "#f87171",
+                              color: asistenciasMap[m.id] ? "#f87171" : "#34d399",
                               fontSize: 11,
                               fontWeight: 700,
                               padding: "4px 8px",
                               borderRadius: 6,
-                              backgroundColor: asistenciasMap[m.id] ? "rgba(52,211,153,0.12)" : "rgba(248,113,113,0.12)"
+                              backgroundColor: asistenciasMap[m.id] ? "rgba(248,113,113,0.12)" : "rgba(52,211,153,0.12)"
                             }}
                             onClick={() => setAsistenciasMap(p => ({ ...p, [m.id]: !p[m.id] }))}
                           >
-                            {asistenciasMap[m.id] ? "PRESENTE" : "FALTA"}
+                            {asistenciasMap[m.id] ? "FALTA" : "PRESENTE"}
                           </button>
                         </td>
                         <td style={{ padding: "10px 12px" }}>
@@ -1542,6 +1542,13 @@ export default function ModulosView({
             </div>
           )}
         </Modal>
+
+        <AlertDialog
+          open={msg.open}
+          onClose={() => setMsg(p => ({ ...p, open: false }))}
+          message={msg.text}
+          type={msg.type}
+        />
       </div>
     );
   }
