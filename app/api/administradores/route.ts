@@ -10,16 +10,10 @@ export async function GET(request: NextRequest) {
     .order("apellidos", { ascending: true });
 
   if (error) {
-    // Si la tabla no existe en BD todavía, devolvemos las cuentas estáticas como fallback
+    // Si la tabla no existe en BD todavía, devolvemos array vacío como fallback
     const isTableMissing = error.code === "P0001" || error.message.includes("does not exist") || error.code === "42P01";
     if (isTableMissing) {
-      const legacyAdmins = [
-        { id: "legacy-1", email: "admin@tecsur.edu.pe", nombres: "Administrador", apellidos: "General", created_at: new Date().toISOString() },
-        { id: "legacy-2", email: "hhuarayachipana@gmail.com", nombres: "Henry", apellidos: "Huaraya", created_at: new Date().toISOString() },
-        { id: "legacy-3", email: "administrador@tecsur.com.pe", nombres: "Soporte", apellidos: "TECSUR", created_at: new Date().toISOString() },
-        { id: "legacy-4", email: "institutotecsursedejuliaca@gmail.com", nombres: "Intranet", apellidos: "TECSUR", created_at: new Date().toISOString() }
-      ];
-      return Response.json(legacyAdmins);
+      return Response.json([]);
     }
     return Response.json({ error: error.message }, { status: 500 });
   }

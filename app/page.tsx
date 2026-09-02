@@ -9,12 +9,8 @@ import {
   Menu,
   X,
   ChevronRight,
-  Cpu,
   LogOut,
-  Wifi,
-  Shield,
   ScanLine,
-  Layers,
   Users,
   Loader2,
   Key,
@@ -32,9 +28,7 @@ import AlumnosView from "@/components/AlumnosView";
 import ModulosView from "@/components/ModulosView";
 import IngresoView from "@/components/IngresoView";
 import CarrerasView from "@/components/CarrerasView";
-import AuditoriaView from "@/components/AuditoriaView";
 import GestionDocentesView from "@/components/GestionDocentesView";
-import GestionAdminsView from "@/components/GestionAdminsView";
 
 // ── Paleta TECSUR ─────────────────────────────────────────────
 // Azul acero   : #2a6db5
@@ -43,7 +37,7 @@ import GestionAdminsView from "@/components/GestionAdminsView";
 // Fondo oscuro : #060d18
 // -------------------------------------------------------------
 
-type View = "consulta" | "docentes" | "pensiones" | "alumnos" | "modulos" | "ingreso" | "carreras" | "auditoria" | "gestion-docentes" | "gestion-admins";
+type View = "consulta" | "docentes" | "pensiones" | "alumnos" | "modulos" | "ingreso" | "carreras" | "gestion-docentes";
 
 interface NavItem {
   id: View;
@@ -69,7 +63,6 @@ const navGroups: NavGroup[] = [
     items: [
       { id: "carreras", label: "PLAN DE ESTUDIOS", icon: GraduationCap, description: "Gestión de carreras y modulos" },
       { id: "gestion-docentes", label: "DOCENTES", icon: ShieldUser, description: "Crear y gestionar cuentas de los docentes" },
-      { id: "gestion-admins", label: "ADMINISTRADORES", icon: Key, description: "Crear y gestionar cuentas de administradores" },
       { id: "alumnos", label: "ALUMNOS", icon: Users, description: "Registro y matrícula" },
       { id: "docentes", label: "REGISTRO DE ASISTENCIA Y NOTAS", icon: BookOpen, description: "Notas y asistencias" },
     ],
@@ -79,7 +72,6 @@ const navGroups: NavGroup[] = [
     items: [
       { id: "pensiones", label: "PENSIONES Y PAGOS", icon: CreditCard, description: "Gestión de pagos y recibos" },
       { id: "consulta", label: "CONSULTA DE ALUMNOS", icon: Search, description: "Búsqueda DNI e historial" },
-      { id: "auditoria", label: "AUDITORÍA", icon: Shield, description: "Historial de cambios" },
     ],
   },
 ];
@@ -132,39 +124,59 @@ export default function HomePage() {
     supabase.auth.getSession().then(async ({ data }) => {
       if (!data.session) { router.replace("/login"); return; }
       const email = (data.session.user?.email ?? "").toLowerCase().trim();
+      const userId = data.session.user.id;
       setUserEmail(email);
 
-      const adminEmailsLegacy = ["admin@tecsur.edu.pe", "hhuarayachipana@gmail.com", "administrador@tecsur.com.pe", "institutotecsursedejuliaca@gmail.com"];
-      
-      // Consultar si el correo está en la tabla de administradores
-      const { data: adminData } = await supabase
+      // ── 1. Verificar si es administrador ──────────────────────────────────
+      const { data: adminData, error: adminError } = await supabase
         .from("administradores")
         .select("id")
-        .eq("email", email)
+        .or(`email.eq.${email},id.eq.${userId}`)
         .maybeSingle();
 
-      if (adminData || adminEmailsLegacy.includes(email)) {
+      if (adminError) {
+        console.error("[auth] Error consultando administradores:", adminError.message, adminError.code);
+      }
+
+      if (adminData) {
         setUserRole("admin");
         setActiveView("ingreso");
         setLoadingRole(false);
-      } else {
-        // Consultar si el ID de usuario existe en la tabla de docentes
-        const { data: docData, error } = await supabase
-          .from("docentes")
-          .select("id")
-          .eq("id", data.session.user.id)
-          .single();
+        return;
+      }
 
-        if (error || !docData) {
-          toast.error("Acceso denegado. Perfil de usuario no autorizado.");
-          await supabase.auth.signOut();
-          setTimeout(() => { window.location.href = "/login"; }, 800);
-        } else {
-          setUserRole("docente");
-          setDocenteId(data.session.user.id);
-          setActiveView("docentes");
-          setLoadingRole(false);
-        }
+      // ── 2. Verificar si es docente ─────────────────────────────────────────
+      const { data: docData, error: docError } = await supabase
+        .from("docentes")
+        .select("id")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (docError) {
+        console.error("[auth] Error consultando docentes:", docError.message, docError.code);
+      }
+
+      if (docData) {
+        setUserRole("docente");
+        setDocenteId(userId);
+        setActiveView("docentes");
+        setLoadingRole(false);
+        return;
+      }
+
+      // ── 3. Ningún perfil encontrado ────────────────────────────────────────
+      // Solo expulsar si NO hubo errores técnicos (para no expulsar por fallo de RLS)
+      if (!adminError && !docError) {
+        toast.error("Acceso denegado. Perfil de usuario no autorizado.");
+        await supabase.auth.signOut();
+        setTimeout(() => { window.location.href = "/login"; }, 1000);
+      } else {
+        // Error de consulta: no cerrar sesión, mostrar aviso
+        toast.error(
+          "No se pudo verificar el perfil. Verifica tu conexión o contacta al administrador.",
+          { duration: 6000 }
+        );
+        setLoadingRole(false);
       }
     });
   }, [router]);
@@ -728,9 +740,7 @@ export default function HomePage() {
             {activeView === "modulos" && <ModulosView onNavigate={(view) => setActiveView(view as any)} />}
             {activeView === "ingreso" && <IngresoView />}
             {activeView === "carreras" && <CarrerasView />}
-            {activeView === "auditoria" && <AuditoriaView />}
             {activeView === "gestion-docentes" && <GestionDocentesView />}
-            {activeView === "gestion-admins" && <GestionAdminsView currentUserEmail={userEmail || undefined} />}
           </div>
         </main>
       </div>

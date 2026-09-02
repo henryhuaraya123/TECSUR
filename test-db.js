@@ -1,42 +1,54 @@
+/**
+ * SCRIPT DE UTILIDAD: Prueba de conexión a Supabase
+ *
+ * ⚠️  SEGURIDAD: Este script NO debe contener credenciales hardcodeadas.
+ *     Usa variables de entorno para pasar los valores sensibles.
+ *
+ * USO (local):
+ *   Asegúrate de tener un archivo .env.local con:
+ *     NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+ *     NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+ *
+ *   Luego ejecuta:
+ *     node -r dotenv/config test-db.js
+ */
+
 const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = 'https://zutuvuioyppqrrmfyylh.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1dHV2dWlveXBwcXJybWZ5eWxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMDU3OTUsImV4cCI6MjA5Nzg4MTc5NX0._kxOI5HLViSRPoiO0LiHC4oHmSYP_cS5uLRmFgOliPc';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error(
+    '❌ Variables de entorno requeridas:\n' +
+    '   NEXT_PUBLIC_SUPABASE_URL\n' +
+    '   NEXT_PUBLIC_SUPABASE_ANON_KEY'
+  );
+  process.exit(1);
+}
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 async function run() {
-  console.log('Testing connection to Supabase...');
-  
-  console.log('\n--- 1. Testing carreras table select ---');
-  const { data: carreras, error: carrerasError } = await supabase.from('carreras').select('*');
+  console.log('Probando conexión a Supabase...');
+
+  console.log('\n--- 1. Probando tabla carreras ---');
+  const { data: carreras, error: carrerasError } = await supabase.from('carreras').select('id, nombre');
   if (carrerasError) {
-    console.error('Error fetching carreras:', carrerasError);
+    console.error('Error fetching carreras:', carrerasError.message);
   } else {
-    console.log('Carreras count:', carreras.length);
-    console.log('Carreras data:', carreras);
+    console.log('Carreras encontradas:', carreras.length);
   }
 
-  console.log('\n--- 2. Testing docentes table select ---');
-  const { data: docentes, error: docentesError } = await supabase.from('docentes').select('*');
+  console.log('\n--- 2. Probando tabla docentes ---');
+  const { data: docentes, error: docentesError } = await supabase.from('docentes').select('id, nombres');
   if (docentesError) {
-    console.error('Error fetching docentes:', docentesError);
+    console.error('Error fetching docentes:', docentesError.message);
   } else {
-    console.log('Docentes count:', docentes.length);
-    console.log('Docentes data:', docentes);
+    console.log('Docentes encontrados:', docentes.length);
   }
 
-  console.log('\n--- 3. Testing auth login simulation ---');
-  // Attempting a dummy sign in to check GoTrue connection/schema error
-  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-    email: 'institutotecsursedejuliaca@gmail.com',
-    password: 'huaraya_2018',
-  });
-  if (signInError) {
-    console.error('Error signing in:', signInError);
-  } else {
-    console.log('Sign in successful! User ID:', signInData.user.id);
-  }
+  console.log('\n✅ Prueba de conexión completada.');
 }
 
-run().catch(console.error);
+run().catch((err) => { console.error(err); process.exit(1); });

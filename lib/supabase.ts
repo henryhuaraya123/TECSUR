@@ -1,9 +1,19 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// ── Singleton: evita múltiples instancias de GoTrueClient en el mismo contexto ──
+// En Next.js con App Router + HMR, los módulos se re-ejecutan en desarrollo.
+// Almacenar la instancia en globalThis garantiza que solo exista una.
+declare global {
+  // eslint-disable-next-line no-var
+  var __supabaseClient: SupabaseClient | undefined
+}
+
+export const supabase: SupabaseClient =
+  globalThis.__supabaseClient ??
+  (globalThis.__supabaseClient = createClient(supabaseUrl, supabaseAnonKey))
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -176,11 +186,11 @@ export interface Ingreso {
 
 /** Turnos con su descripción horaria */
 export const TURNOS_LABELS: Record<string, string> = {
-  'mañana':      'Mañana (08:00 – 12:00)',
-  'tarde':       'Tarde (13:00 – 17:00)',
-  'noche':       'Noche (17:00 – 20:30)',
-  'sabado_am':   'Sábado AM (08:00 – 13:00)',
+  'mañana': 'Mañana (08:00 – 12:00)',
+  'tarde': 'Tarde (13:00 – 17:00)',
+  'noche': 'Noche (17:00 – 20:30)',
+  'sabado_am': 'Sábado AM (08:00 – 13:00)',
   'sabado_full': 'Sábado Full (08:00 – 17:00)',
-  'domingo_am':  'Domingo AM (08:00 – 13:00)',
-  'domingo_full':'Domingo Full (08:00 – 17:00)',
+  'domingo_am': 'Domingo AM (08:00 – 13:00)',
+  'domingo_full': 'Domingo Full (08:00 – 17:00)',
 }

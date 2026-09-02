@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, LogIn, Eye, EyeOff } from "lucide-react";
@@ -14,6 +14,10 @@ import { toast, Toaster } from "sonner";
 // Fondo oscuro         : #060d18
 // -------------------------------------------------------------
 
+// ── Constantes de rate limiting ──────────────────────────────
+const MAX_INTENTOS = 3;
+const COOLDOWN_SEGUNDOS = 60;
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -21,8 +25,29 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Rate limiting: contador de intentos fallidos y cooldown
+  const [intentosFallidos, setIntentosFallidos] = useState(0);
+  const [cooldownRestante, setCooldownRestante] = useState(0);
+  const cooldownRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Activar cooldown cuando se alcanzan MAX_INTENTOS
+  function activarCooldown() {
+    let segundos = COOLDOWN_SEGUNDOS;
+    setCooldownRestante(segundos);
+    cooldownRef.current = setInterval(() => {
+      segundos -= 1;
+      setCooldownRestante(segundos);
+      if (segundos <= 0) {
+        clearInterval(cooldownRef.current!);
+        setCooldownRestante(0);
+        setIntentosFallidos(0);
+      }
+    }, 1000);
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
+    if (cooldownRestante > 0) return;
     setLoading(true);
 
     const { error: authError } = await supabase.auth.signInWithPassword({
@@ -32,11 +57,29 @@ export default function LoginPage() {
 
     if (authError) {
       setLoading(false);
-      const msg =
-        authError.message === "Invalid login credentials"
-          ? "Correo o contraseña incorrectos."
-          : authError.message;
-      toast.error(msg, { duration: 4000 });
+      const nuevoConteo = intentosFallidos + 1;
+      setIntentosFallidos(nuevoConteo);
+
+      // Manejar bloqueo de Supabase (HTTP 429)
+      if ((authError as any).status === 429 || authError.message?.toLowerCase().includes("rate limit")) {
+        toast.error(
+          "Demasiados intentos fallidos. Por seguridad, su acceso ha sido bloqueado temporalmente. Intente nuevamente en unos minutos.",
+          { duration: 8000 }
+        );
+        activarCooldown();
+        return;
+      }
+
+      // Cooldown local luego de 3 intentos fallidos consecutivos
+      if (nuevoConteo >= MAX_INTENTOS) {
+        activarCooldown();
+      }
+
+      // Mensaje genérico — NUNCA revela si el correo existe o no
+      toast.error(
+        "Credenciales de acceso incorrectas o cuenta no autorizada.",
+        { duration: 4000 }
+      );
       return;
     }
 
@@ -370,36 +413,56 @@ export default function LoginPage() {
 
               </div>
 
+              {/* Aviso de cooldown */}
+              {cooldownRestante > 0 && (
+                <div
+                  style={{
+                    marginTop: 14, padding: "10px 14px",
+                    background: "rgba(239,68,68,0.08)",
+                    border: "1px solid rgba(239,68,68,0.22)",
+                    borderRadius: 10, fontSize: 12,
+                    color: "rgba(252,165,165,0.9)",
+                    textAlign: "center", lineHeight: 1.5,
+                    animation: "fadeUp .3s both",
+                  }}
+                >
+                  Acceso bloqueado por {intentosFallidos >= MAX_INTENTOS ? "demasiados intentos fallidos" : "solicitud de Supabase"}.<br />
+                  Podrá intentarlo nuevamente en <strong>{cooldownRestante}s</strong>.
+                </div>
+              )}
+
               {/* Botón submit */}
               <button
                 id="login-submit-btn"
                 type="submit"
-                disabled={loading}
+                disabled={loading || cooldownRestante > 0}
                 style={{
                   width: "100%",
                   height: 50,
                   marginTop: 22,
                   border: "none",
                   borderRadius: 12,
-                  cursor: loading ? "not-allowed" : "pointer",
+                  cursor: (loading || cooldownRestante > 0) ? "not-allowed" : "pointer",
                   fontFamily: "inherit",
                   fontSize: 15, fontWeight: 700,
                   color: "#fff",
                   letterSpacing: "0.04em",
-                  background: "linear-gradient(135deg, #1a4a7a 0%, #2a6db5 55%, #4ab3d8 100%)",
+                  background: cooldownRestante > 0
+                    ? "rgba(42,109,181,0.2)"
+                    : "linear-gradient(135deg, #1a4a7a 0%, #2a6db5 55%, #4ab3d8 100%)",
                   position: "relative",
                   overflow: "hidden",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 10,
-                  opacity: loading ? 0.75 : 1,
-                  transition: "transform .18s, box-shadow .25s, opacity .2s",
-                  boxShadow: "0 4px 22px rgba(42,109,181,0.45)",
+                  opacity: (loading || cooldownRestante > 0) ? 0.6 : 1,
+                  transition: "transform .18s, box-shadow .25s, opacity .2s, background .3s",
+                  boxShadow: cooldownRestante > 0 ? "none" : "0 4px 22px rgba(42,109,181,0.45)",
                   animation: "fadeUp .6s .46s both",
                 }}
                 onMouseEnter={(e) => {
-                  if (!loading) {
+                  if (!loading && cooldownRestante === 0) {
                     (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-1px)";
                     (e.currentTarget as HTMLButtonElement).style.boxShadow =
                       "0 8px 30px rgba(74,179,216,0.45)";
@@ -408,23 +471,27 @@ export default function LoginPage() {
                 onMouseLeave={(e) => {
                   (e.currentTarget as HTMLButtonElement).style.transform = "";
                   (e.currentTarget as HTMLButtonElement).style.boxShadow =
-                    "0 4px 22px rgba(42,109,181,0.45)";
+                    cooldownRestante > 0 ? "none" : "0 4px 22px rgba(42,109,181,0.45)";
                 }}
               >
                 {/* shimmer */}
-                <span
-                  aria-hidden
-                  style={{
-                    position: "absolute", inset: 0,
-                    background:
-                      "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%)",
-                    animation: "shimmer 2.5s ease-in-out infinite",
-                  }}
-                />
+                {cooldownRestante === 0 && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: "absolute", inset: 0,
+                      background:
+                        "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%)",
+                      animation: "shimmer 2.5s ease-in-out infinite",
+                    }}
+                  />
+                )}
                 {loading ? (
                   <span style={{ opacity: 0.85, position: "relative" }}>
                     Verificando…
                   </span>
+                ) : cooldownRestante > 0 ? (
+                  <span style={{ position: "relative" }}>Bloqueado ({cooldownRestante}s)</span>
                 ) : (
                   <>
                     <LogIn size={17} style={{ position: "relative" }} />
