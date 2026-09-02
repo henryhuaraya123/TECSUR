@@ -1,3 +1,0 @@
--- [IGNORAR ESTE ARCHIVO]
--- La migración correcta para estructurar los cargos de pago es 'db_migration_cargos_modulo.sql'.
--- Por favor, ejecute ese script en su editor SQL de Supabase.
