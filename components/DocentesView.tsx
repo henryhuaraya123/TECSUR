@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronDown, Calendar, Save, Plus, CheckSquare, Square, Layers, User, Edit, Search, X, Clock, Folder, Grid } from "lucide-react";
+import { ChevronLeft, ChevronDown, Calendar, Save, Plus, CheckSquare, Square, Layers, User, Edit, Search, X, Clock, Folder, Grid, GraduationCap } from "lucide-react";
 import AlertDialog from "./AlertDialog";
 import Modal from "./Modal";
 import ReporteModuloBtn from "./ReporteModuloBtn";
@@ -46,7 +46,8 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
   const [pageSize] = useState(6);
   const [viewMode, setViewMode] = useState<"folders" | "flat">("folders");
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
-  const [currentSubFolder, setCurrentSubFolder] = useState<string | null>(null);
+  const [currentAulaFolder, setCurrentAulaFolder] = useState<string | null>(null);
+  const [filterCarrera, setFilterCarrera] = useState("");
   const [allAsistencias, setAllAsistencias] = useState<any[]>([]);
   const [loadingReporte, setLoadingReporte] = useState(false);
   const [filterDocente, setFilterDocente] = useState("");
@@ -306,6 +307,14 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
   };
 
   if (!selectedModulo) {
+    const carrerasDisponibles = Array.from(
+      new Set(
+        cursosDocente
+          .map(c => c.modulos?.carreras?.nombre?.trim())
+          .filter(Boolean) as string[]
+      )
+    ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+
     const filteredCursos = cursosDocente
       .filter(c => {
         const m = c.modulos;
@@ -316,6 +325,10 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
         if (filterStartDate && m.fecha_inicio && m.fecha_inicio < filterStartDate) return false;
         if (filterEndDate && m.fecha_fin && m.fecha_fin > filterEndDate) return false;
         if (filterDocente && c.docente_id !== filterDocente) return false;
+        if (filterCarrera) {
+          const carName = c.modulos?.carreras?.nombre?.trim() || "SIN CARRERA";
+          if (carName.toUpperCase() !== filterCarrera.toUpperCase()) return false;
+        }
         return true;
       })
       .filter(c => {
@@ -331,56 +344,238 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
           docName.includes(q);
       });
 
-    // Group courses by classroom (aula)
-    const coursesByAula: Record<string, any[]> = {};
-    filteredCursos.forEach(c => {
-      const aulaKey = c.modulos?.aula?.trim() ? c.modulos.aula.trim().toUpperCase() : "SIN AULA";
-      if (!coursesByAula[aulaKey]) {
-        coursesByAula[aulaKey] = [];
+    // Ordenar cursos por Carrera, luego por Módulo y finalmente por orden/nombre
+    const sortedCursos = [...filteredCursos].sort((a, b) => {
+      const carA = (a.modulos?.carreras?.nombre || "").trim();
+      const carB = (b.modulos?.carreras?.nombre || "").trim();
+      if (!carA && carB) return 1;
+      if (carA && !carB) return -1;
+      const compCarrera = carA.localeCompare(carB, "es", { sensitivity: "base" });
+      if (compCarrera !== 0) return compCarrera;
+
+      const modA = (a.modulos?.nombre || "").trim();
+      const modB = (b.modulos?.nombre || "").trim();
+      const compModulo = modA.localeCompare(modB, "es", { sensitivity: "base" });
+      if (compModulo !== 0) return compModulo;
+
+      if (a.orden !== undefined && b.orden !== undefined && a.orden !== b.orden) {
+        return (a.orden || 0) - (b.orden || 0);
       }
-      coursesByAula[aulaKey].push(c);
+      return (a.nombre || "").localeCompare(b.nombre || "", "es", { sensitivity: "base" });
     });
 
-    const folderNames = Object.keys(coursesByAula).sort((a, b) => {
+    // Agrupar cursos por carrera
+    const coursesByCarrera: Record<string, any[]> = {};
+    sortedCursos.forEach(c => {
+      const carreraKey = c.modulos?.carreras?.nombre?.trim()
+        ? c.modulos.carreras.nombre.trim().toUpperCase()
+        : "SIN CARRERA";
+      if (!coursesByCarrera[carreraKey]) {
+        coursesByCarrera[carreraKey] = [];
+      }
+      coursesByCarrera[carreraKey].push(c);
+    });
+
+    const folderNames = Object.keys(coursesByCarrera).sort((a, b) => {
+      if (a === "SIN CARRERA") return 1;
+      if (b === "SIN CARRERA") return -1;
+      return a.localeCompare(b, "es", { sensitivity: "base" });
+    });
+
+    const coursesInCarrera = currentFolder ? (coursesByCarrera[currentFolder] || []) : [];
+
+    // Agrupar cursos de la carrera seleccionada por aula
+    const aulasInCarrera: Record<string, any[]> = {};
+    coursesInCarrera.forEach(c => {
+      const aulaKey = c.modulos?.aula?.trim() ? c.modulos.aula.trim().toUpperCase() : "SIN AULA";
+      if (!aulasInCarrera[aulaKey]) {
+        aulasInCarrera[aulaKey] = [];
+      }
+      aulasInCarrera[aulaKey].push(c);
+    });
+
+    const aulaFolderNames = Object.keys(aulasInCarrera).sort((a, b) => {
       if (a === "SIN AULA") return 1;
       if (b === "SIN AULA") return -1;
-      return a.localeCompare(b);
+      return a.localeCompare(b, "es", { sensitivity: "base" });
     });
 
-    const coursesInFolder = currentFolder ? (coursesByAula[currentFolder] || []) : [];
+    const coursesInAula = currentAulaFolder ? (aulasInCarrera[currentAulaFolder] || []) : [];
 
-    // Group courses in the current folder by course name (sub-folder)
-    const coursesBySubFolder: Record<string, any[]> = {};
-    coursesInFolder.forEach(c => {
-      const subFolderKey = c.nombre?.trim() ? c.nombre.trim() : "SIN NOMBRE";
-      if (!coursesBySubFolder[subFolderKey]) {
-        coursesBySubFolder[subFolderKey] = [];
-      }
-      coursesBySubFolder[subFolderKey].push(c);
-    });
-
-    const subFolderNames = Object.keys(coursesBySubFolder).sort((a, b) => {
-      if (a === "SIN NOMBRE") return 1;
-      if (b === "SIN NOMBRE") return -1;
-      return a.localeCompare(b);
-    });
-
-    const coursesInSubFolder = currentSubFolder ? (coursesBySubFolder[currentSubFolder] || []) : [];
-
-    const totalItems = viewMode === "folders" && currentFolder !== null && currentSubFolder !== null
-      ? coursesInSubFolder.length
+    const effectivePageSize = viewMode === "flat" ? 12 : 6;
+    const totalItems = viewMode === "folders" && currentFolder !== null && currentAulaFolder !== null
+      ? coursesInAula.length
       : viewMode === "flat"
-        ? filteredCursos.length
+        ? sortedCursos.length
         : 0;
 
-    const totalPages = Math.ceil(totalItems / pageSize);
+    const totalPages = Math.ceil(totalItems / effectivePageSize);
     const activePage = Math.min(currentPage, totalPages || 1);
 
-    const paginatedCursos = viewMode === "folders" && currentFolder !== null && currentSubFolder !== null
-      ? coursesInSubFolder.slice((activePage - 1) * pageSize, activePage * pageSize)
+    const paginatedCursos = viewMode === "folders" && currentFolder !== null && currentAulaFolder !== null
+      ? coursesInAula.slice((activePage - 1) * effectivePageSize, activePage * effectivePageSize)
       : viewMode === "flat"
-        ? filteredCursos.slice((activePage - 1) * pageSize, activePage * pageSize)
+        ? sortedCursos.slice((activePage - 1) * effectivePageSize, activePage * effectivePageSize)
         : [];
+
+    // Agrupar los cursos paginados en la vista plana por carrera
+    const flatCoursesByCarrera: Record<string, any[]> = {};
+    paginatedCursos.forEach(c => {
+      const carreraKey = c.modulos?.carreras?.nombre?.trim()
+        ? c.modulos.carreras.nombre.trim().toUpperCase()
+        : "SIN CARRERA";
+      if (!flatCoursesByCarrera[carreraKey]) {
+        flatCoursesByCarrera[carreraKey] = [];
+      }
+      flatCoursesByCarrera[carreraKey].push(c);
+    });
+
+    const renderCursoCard = (c: any) => {
+      const m = c.modulos || {};
+      const doc = c.docentes || {};
+      const isFinished = new Date().toLocaleDateString('sv-SE') > m.fecha_fin;
+
+      let diffDays = 0;
+      if (m.fecha_fin) {
+        const hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+        const fin = new Date(m.fecha_fin + "T00:00:00");
+        const diffTime = fin.getTime() - hoy.getTime();
+        diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      }
+
+      return (
+        <div key={c.id} style={{ ...cardStyle, padding: 20, cursor: "pointer", transition: "all .2s", display: "flex", flexDirection: "column", gap: 10 }}
+          onClick={() => {
+            setSelectedModulo(m);
+            setSelectedCursoId(c.id);
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.borderColor = "rgba(74,179,216,0.5)"}
+          onMouseLeave={(e) => e.currentTarget.style.borderColor = "rgba(42,109,181,0.18)"}>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, background: "rgba(74,179,216,0.15)", color: "#4ab3d8", fontWeight: 600 }}>{(m.modalidad || "").toUpperCase()}</span>
+              <span style={{
+                fontSize: 10, padding: "3px 8px", borderRadius: 20, fontWeight: 700, letterSpacing: 0.5,
+                background: isFinished ? "rgba(148,163,184,0.15)" : "rgba(52,211,153,0.15)",
+                color: isFinished ? "#94a3b8" : "#34d399"
+              }}>
+                {isFinished ? "FINALIZADO" : "EN CURSO"}
+              </span>
+              {!isFinished && m.fecha_fin && (
+                <>
+                  {diffDays > 0 ? (
+                    <span style={{
+                      fontSize: 10,
+                      padding: "3px 8px",
+                      borderRadius: 20,
+                      fontWeight: 700,
+                      background: diffDays <= 7 ? "rgba(245,158,11,0.15)" : "rgba(59,130,246,0.12)",
+                      color: diffDays <= 7 ? "#fbbf24" : "#60a5fa",
+                      border: diffDays <= 7 ? "1px solid rgba(245,158,11,0.22)" : "1px solid rgba(59,130,246,0.18)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4
+                    }}>
+                      <Clock size={10} style={{ flexShrink: 0 }} />
+                      FALTAN {diffDays} {diffDays === 1 ? "DÍA" : "DÍAS"}
+                    </span>
+                  ) : diffDays === 0 ? (
+                    <span style={{
+                      fontSize: 10,
+                      padding: "3px 8px",
+                      borderRadius: 20,
+                      fontWeight: 700,
+                      background: "rgba(239,68,68,0.15)",
+                      color: "#f87171",
+                      border: "1px solid rgba(239,68,68,0.22)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4
+                    }}>
+                      <Clock size={10} style={{ flexShrink: 0 }} />
+                      TERMINA HOY
+                    </span>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </div>
+
+          <div>
+            {m.carreras && (
+              <div style={{ marginBottom: 6 }}>
+                <span style={carreraBadgeStyle(m.carreras.nombre)}>
+                  {m.carreras.nombre.toUpperCase()}
+                </span>
+              </div>
+            )}
+            <div style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(42,109,181,0.18)", border: "1px solid rgba(42,109,181,0.3)", color: "rgba(120,160,210,0.9)", fontWeight: 600 }}>
+                MÓDULO: {(m.nombre || "").toUpperCase()}
+              </span>
+              {m.aula && (
+                <span style={{ fontSize: 10, marginLeft: 6, padding: "2px 6px", borderRadius: 4, background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.25)", color: "#60a5fa", fontWeight: 600 }}>
+                  AULA: {m.aula.toUpperCase()}
+                </span>
+              )}
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: "#dbeafe", margin: 0, lineHeight: 1.3 }}>{c.nombre.toUpperCase()}</h3>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "rgba(120,160,210,0.7)", marginTop: "auto", paddingTop: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Calendar size={12} style={{ color: "rgba(74,179,216,0.5)", flexShrink: 0 }} /> {m.fecha_inicio} al {m.fecha_fin}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}><User size={12} style={{ color: "rgba(74,179,216,0.5)", flexShrink: 0 }} /> Docente: {doc.id ? `${doc.apellidos}, ${doc.nombres}` : "No asignado"}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Layers size={12} style={{ color: "rgba(74,179,216,0.5)", flexShrink: 0 }} /> Créditos: {c.creditos || 1} CR</div>
+          </div>
+
+          <button
+            className="ts-btn-alumnos"
+            style={{
+              ...btnSecondary,
+              marginTop: 10,
+              width: "100%",
+              justifyContent: "center",
+              padding: "8px 12px",
+              fontSize: 12,
+              fontWeight: 600,
+              borderRadius: 8,
+              background: "rgba(52,211,153,0.08)",
+              border: "1px solid rgba(52,211,153,0.18)",
+              color: "#34d399",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+            onClick={() => {
+              setSelectedModulo(m);
+              setSelectedCursoId(c.id);
+            }}
+          >
+            VER ALUMNOS DEL CURSO
+          </button>
+
+          <ReporteCursoBtn
+            cursoId={c.id}
+            moduloId={m.id}
+            text="DESCARGAR REPORTE"
+            style={{
+              marginTop: 8,
+              width: "100%",
+              justifyContent: "center",
+              padding: "8px 12px",
+              height: "auto",
+              borderRadius: 8,
+              background: "rgba(251,191,36,0.08)",
+              border: "1px solid rgba(251,191,36,0.18)",
+              color: "#fbbf24",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          />
+        </div>
+      );
+    };
 
     return (
       <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 20 }}>
@@ -418,7 +613,7 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
           {/* Línea divisoria */}
           <div style={{ height: "1px", background: "rgba(42,109,181,0.12)", margin: "0 -28px" }} />
 
-          {/* Fila de Controles (Buscador, Filtro Docente y Fechas) */}
+          {/* Fila de Controles (Buscador, Filtros y Modo de Vista) */}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", width: "100%" }}>
             {/* Buscador */}
             <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
@@ -428,9 +623,26 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
                 placeholder={docenteId ? "Buscar curso, módulo o carrera…" : "Buscar módulo o carrera…"}
                 style={{ ...inpStyle, paddingLeft: 38, fontSize: 13, height: 40 }}
                 value={searchQuery}
-                onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); setCurrentFolder(null); setCurrentSubFolder(null); }}
+                onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); setCurrentFolder(null); setCurrentAulaFolder(null); }}
               />
             </div>
+
+            {/* Filtro por Carrera */}
+            {carrerasDisponibles.length > 0 && (
+              <div style={{ position: "relative" }}>
+                <select
+                  style={{ ...inpStyle, width: 200, paddingRight: 32, cursor: "pointer", height: 40, fontSize: 12 }}
+                  value={filterCarrera}
+                  onChange={e => { setFilterCarrera(e.target.value); setCurrentPage(1); setCurrentFolder(null); setCurrentAulaFolder(null); }}
+                >
+                  <option value="">Todas las carreras</option>
+                  {carrerasDisponibles.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <ChevronDown size={12} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "rgba(74,179,216,0.5)" }} />
+              </div>
+            )}
 
             {/* Filtro por Docente (solo para administradores) */}
             {!docenteId && docentes.length > 0 && (
@@ -438,7 +650,7 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
                 <select
                   style={{ ...inpStyle, width: 220, paddingRight: 32, cursor: "pointer", height: 40, fontSize: 12 }}
                   value={filterDocente}
-                  onChange={e => { setFilterDocente(e.target.value); setCurrentPage(1); setCurrentFolder(null); setCurrentSubFolder(null); }}
+                  onChange={e => { setFilterDocente(e.target.value); setCurrentPage(1); setCurrentFolder(null); setCurrentAulaFolder(null); }}
                 >
                   <option value="">Todos los docentes</option>
                   {docentes.map(d => (
@@ -456,7 +668,7 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
                 type="date"
                 style={{ ...inpStyle, width: 130, height: 40, fontSize: 11, padding: "0 8px", cursor: "pointer" }}
                 value={filterStartDate}
-                onChange={e => { setFilterStartDate(e.target.value); setCurrentPage(1); setCurrentFolder(null); setCurrentSubFolder(null); }}
+                onChange={e => { setFilterStartDate(e.target.value); setCurrentPage(1); setCurrentFolder(null); setCurrentAulaFolder(null); }}
               />
             </div>
 
@@ -467,14 +679,14 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
                 type="date"
                 style={{ ...inpStyle, width: 130, height: 40, fontSize: 11, padding: "0 8px", cursor: "pointer" }}
                 value={filterEndDate}
-                onChange={e => { setFilterEndDate(e.target.value); setCurrentPage(1); setCurrentFolder(null); setCurrentSubFolder(null); }}
+                onChange={e => { setFilterEndDate(e.target.value); setCurrentPage(1); setCurrentFolder(null); setCurrentAulaFolder(null); }}
               />
             </div>
 
             {/* Botón de limpiar filtros */}
-            {(filterStartDate || filterEndDate || filterDocente) && (
+            {(filterStartDate || filterEndDate || filterDocente || filterCarrera) && (
               <button
-                onClick={() => { setFilterStartDate(""); setFilterEndDate(""); setFilterDocente(""); setCurrentPage(1); setCurrentFolder(null); setCurrentSubFolder(null); }}
+                onClick={() => { setFilterStartDate(""); setFilterEndDate(""); setFilterDocente(""); setFilterCarrera(""); setCurrentPage(1); setCurrentFolder(null); setCurrentAulaFolder(null); }}
                 style={{
                   background: "rgba(248,113,113,0.1)",
                   border: "1px solid rgba(248,113,113,0.2)",
@@ -500,8 +712,8 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
             <div style={{ display: "flex", gap: 2, background: "rgba(10,22,44,0.7)", padding: "4px", borderRadius: 10, border: "1px solid rgba(42,109,181,0.22)", height: 40, alignItems: "center", boxSizing: "border-box", marginLeft: "auto" }}>
               <button
                 type="button"
-                title="Vista de Carpetas (Aulas)"
-                onClick={() => { setViewMode("folders"); setCurrentFolder(null); setCurrentSubFolder(null); setCurrentPage(1); }}
+                title="Vista de Carpetas (Carreras y Aulas)"
+                onClick={() => { setViewMode("folders"); setCurrentFolder(null); setCurrentAulaFolder(null); setCurrentPage(1); }}
                 style={{
                   background: viewMode === "folders" ? "rgba(42,109,181,0.25)" : "transparent",
                   border: "none",
@@ -521,7 +733,7 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
               <button
                 type="button"
                 title="Vista Plana (Cuadrícula)"
-                onClick={() => { setViewMode("flat"); setCurrentFolder(null); setCurrentSubFolder(null); setCurrentPage(1); }}
+                onClick={() => { setViewMode("flat"); setCurrentFolder(null); setCurrentAulaFolder(null); setCurrentPage(1); }}
                 style={{
                   background: viewMode === "flat" ? "rgba(42,109,181,0.25)" : "transparent",
                   border: "none",
@@ -546,51 +758,86 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
           <div style={{ textAlign: "center", padding: 40, color: "#4ab3d8" }}>
             {docenteId ? "Cargando cursos..." : "Cargando módulos..."}
           </div>
-        ) : filteredCursos.length === 0 ? (
+        ) : sortedCursos.length === 0 ? (
           <div style={{ padding: "60px 20px", textAlign: "center", color: "rgba(74,179,216,0.4)" }}>
             <Search size={48} style={{ margin: "0 auto 12px", opacity: 0.2 }} />
             <p style={{ fontSize: 13 }}>No se encontraron elementos que coincidan con la búsqueda</p>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {/* Breadcrumb if inside folder */}
+            {/* Breadcrumb if inside folder (Carrera o Aula) */}
             {viewMode === "folders" && currentFolder !== null && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                {currentAulaFolder === null ? (
+                  <button
+                    onClick={() => { setCurrentFolder(null); setCurrentAulaFolder(null); setCurrentPage(1); }}
+                    className="ts-btn-back"
+                    style={{
+                      background: "#ffffff", border: "none", borderRadius: 8,
+                      padding: "6px 12px", color: "#0f172a", fontSize: 12,
+                      fontWeight: 700, cursor: "pointer", display: "inline-flex",
+                      alignItems: "center", gap: 6, transition: "all 0.2s"
+                    }}
+                  >
+                    <ChevronLeft size={14} style={{ strokeWidth: 2.5 }} />
+                    <span>Volver a Carreras</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { setCurrentAulaFolder(null); setCurrentPage(1); }}
+                    className="ts-btn-back"
+                    style={{
+                      background: "#ffffff", border: "none", borderRadius: 8,
+                      padding: "6px 12px", color: "#0f172a", fontSize: 12,
+                      fontWeight: 700, cursor: "pointer", display: "inline-flex",
+                      alignItems: "center", gap: 6, transition: "all 0.2s"
+                    }}
+                  >
+                    <ChevronLeft size={14} style={{ strokeWidth: 2.5 }} />
+                    <span>Volver a Aulas</span>
+                  </button>
+                )}
+                <span style={{ fontSize: 12, color: "rgba(74,179,216,0.3)" }}>|</span>
                 <button
-                  onClick={() => { setCurrentFolder(null); setCurrentSubFolder(null); setCurrentPage(1); }}
-                  className="ts-btn-back"
+                  onClick={() => { setCurrentFolder(null); setCurrentAulaFolder(null); setCurrentPage(1); }}
                   style={{
-                    background: "#ffffff", border: "none", borderRadius: 10,
-                    padding: "8px 14px", color: "#0f172a", fontSize: 12,
-                    fontWeight: 700, cursor: "pointer", display: "inline-flex",
-                    alignItems: "center", gap: 6, transition: "all 0.2s"
+                    background: "transparent",
+                    border: "none",
+                    color: "rgba(120,160,210,0.85)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    transition: "all 0.2s"
                   }}
+                  title="Ir a todas las carreras"
                 >
-                  <ChevronLeft size={14} style={{ strokeWidth: 2.5 }} />
-                  <span>Volver a Aulas</span>
+                  Carreras
                 </button>
                 <span style={{ fontSize: 12, color: "rgba(74,179,216,0.5)" }}>/</span>
                 <button
-                  onClick={() => { setCurrentSubFolder(null); setCurrentPage(1); }}
-                  disabled={currentSubFolder === null}
+                  onClick={() => { setCurrentAulaFolder(null); setCurrentPage(1); }}
+                  disabled={currentAulaFolder === null}
                   style={{
-                    background: currentSubFolder === null ? "rgba(74,179,216,0.08)" : "transparent",
-                    border: currentSubFolder === null ? "1px solid rgba(74,179,216,0.18)" : "none",
+                    background: currentAulaFolder === null ? "rgba(74,179,216,0.08)" : "transparent",
+                    border: currentAulaFolder === null ? "1px solid rgba(74,179,216,0.18)" : "none",
                     borderRadius: 6,
-                    padding: "6px 12px",
-                    color: currentSubFolder === null ? "#4ab3d8" : "rgba(120,160,210,0.85)",
+                    padding: "5px 10px",
+                    color: currentAulaFolder === null ? "#4ab3d8" : "rgba(120,160,210,0.85)",
                     fontSize: 12,
                     fontWeight: 700,
-                    cursor: currentSubFolder === null ? "default" : "pointer",
+                    cursor: currentAulaFolder === null ? "default" : "pointer",
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: 5,
+                    gap: 6,
                     transition: "all 0.2s"
                   }}
                 >
+                  <GraduationCap size={14} />
                   <span>{currentFolder}</span>
                 </button>
-                {currentSubFolder !== null && (
+                {currentAulaFolder !== null && (
                   <>
                     <span style={{ fontSize: 12, color: "rgba(74,179,216,0.5)" }}>/</span>
                     <span style={{
@@ -598,31 +845,89 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
                       color: "#4ab3d8",
                       fontWeight: 700,
                       background: "rgba(74,179,216,0.08)",
-                      padding: "6px 12px",
+                      padding: "5px 10px",
                       border: "1px solid rgba(74,179,216,0.18)",
                       borderRadius: 6,
                       display: "inline-flex",
                       alignItems: "center",
-                      gap: 5
+                      gap: 6
                     }}>
-                      {currentSubFolder}
+                      <Folder size={14} />
+                      <span>{currentAulaFolder}</span>
+                    </span>
+                    <span style={{ fontSize: 11, color: "rgba(120,160,210,0.6)", fontWeight: 600 }}>
+                      ({coursesInAula.length} {coursesInAula.length === 1 ? "curso" : "cursos"})
                     </span>
                   </>
+                )}
+                {currentAulaFolder === null && (
+                  <span style={{ fontSize: 11, color: "rgba(120,160,210,0.6)", fontWeight: 600 }}>
+                    ({coursesInCarrera.length} {coursesInCarrera.length === 1 ? "curso" : "cursos"} en {aulaFolderNames.length} {aulaFolderNames.length === 1 ? "aula" : "aulas"})
+                  </span>
                 )}
               </div>
             )}
 
+            {/* Nivel 1: Carpetas por Carrera */}
             {viewMode === "folders" && currentFolder === null ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
                 {folderNames.map(folderName => {
-                  const count = coursesByAula[folderName].length;
+                  const count = coursesByCarrera[folderName].length;
                   return (
                     <div
                       key={folderName}
                       className="folder-card"
                       onClick={() => {
                         setCurrentFolder(folderName);
-                        setCurrentSubFolder(null);
+                        setCurrentAulaFolder(null);
+                        setCurrentPage(1);
+                      }}
+                      style={{
+                        ...cardStyle,
+                        padding: "20px 24px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 16,
+                        cursor: "pointer",
+                        transition: "all 0.2s ease-in-out",
+                      }}
+                    >
+                      <div style={{
+                        width: 46,
+                        height: 46,
+                        borderRadius: 12,
+                        background: "rgba(74, 179, 216, 0.12)",
+                        border: "1px solid rgba(74, 179, 216, 0.25)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0
+                      }}>
+                        <GraduationCap size={22} style={{ color: "#4ab3d8" }} />
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: "#dbeafe", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={folderName}>
+                          {folderName}
+                        </div>
+                        <div style={{ fontSize: 11, color: "rgba(74, 179, 216, 0.6)", marginTop: 2 }}>
+                          {count} {count === 1 ? "curso asignado" : "cursos asignados"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : viewMode === "folders" && currentFolder !== null && currentAulaFolder === null ? (
+              /* Nivel 2: Carpetas por Aula dentro de la Carrera */
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
+                {aulaFolderNames.map(aulaName => {
+                  const count = aulasInCarrera[aulaName].length;
+                  return (
+                    <div
+                      key={aulaName}
+                      className="folder-card"
+                      onClick={() => {
+                        setCurrentAulaFolder(aulaName);
                         setCurrentPage(1);
                       }}
                       style={{
@@ -649,8 +954,8 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
                         <Folder size={22} style={{ color: "#60a5fa" }} />
                       </div>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: "#dbeafe", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={folderName}>
-                          {folderName}
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "#dbeafe", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={aulaName}>
+                          {aulaName}
                         </div>
                         <div style={{ fontSize: 11, color: "rgba(74, 179, 216, 0.6)", marginTop: 2 }}>
                           {count} {count === 1 ? "curso" : "cursos"}
@@ -660,208 +965,45 @@ export default function DocentesView({ docenteId = null }: DocentesViewProps) {
                   );
                 })}
               </div>
-            ) : viewMode === "folders" && currentFolder !== null && currentSubFolder === null ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
-                {subFolderNames.map(subFolderName => {
-                  const count = coursesBySubFolder[subFolderName].length;
-                  return (
-                    <div
-                      key={subFolderName}
-                      className="folder-card"
-                      onClick={() => {
-                        setCurrentSubFolder(subFolderName);
-                        setCurrentPage(1);
-                      }}
-                      style={{
-                        ...cardStyle,
-                        padding: "20px 24px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 16,
-                        cursor: "pointer",
-                        transition: "all 0.2s ease-in-out",
-                      }}
-                    >
-                      <div style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 10,
-                        background: "rgba(16, 185, 129, 0.12)",
-                        border: "1px solid rgba(16, 185, 129, 0.25)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0
-                      }}>
-                        <Folder size={22} style={{ color: "#10b981" }} />
-                      </div>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: "#dbeafe", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={subFolderName}>
-                          {subFolderName}
-                        </div>
-                        <div style={{ fontSize: 11, color: "rgba(74, 179, 216, 0.6)", marginTop: 2 }}>
-                          {count} {count === 1 ? "curso" : "cursos"}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+            ) : viewMode === "folders" && currentFolder !== null && currentAulaFolder !== null ? (
+              /* Nivel 3: Cursos dentro del Aula seleccionada */
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(310px,1fr))", gap: 16 }}>
+                {paginatedCursos.map(c => renderCursoCard(c))}
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(310px,1fr))", gap: 16 }}>
-                {paginatedCursos.map(c => {
-                  const m = c.modulos || {};
-                  const doc = c.docentes || {};
-                  const isFinished = new Date().toLocaleDateString('sv-SE') > m.fecha_fin;
-
-                  let diffDays = 0;
-                  if (m.fecha_fin) {
-                    const hoy = new Date();
-                    hoy.setHours(0, 0, 0, 0);
-                    const fin = new Date(m.fecha_fin + "T00:00:00");
-                    const diffTime = fin.getTime() - hoy.getTime();
-                    diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                  }
-
-                  return (
-                    <div key={c.id} style={{ ...cardStyle, padding: 20, cursor: "pointer", transition: "all .2s", display: "flex", flexDirection: "column", gap: 10 }}
-                      onClick={() => {
-                        setSelectedModulo(m);
-                        setSelectedCursoId(c.id);
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.borderColor = "rgba(74,179,216,0.5)"}
-                      onMouseLeave={(e) => e.currentTarget.style.borderColor = "rgba(42,109,181,0.18)"}>
-
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                          <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, background: "rgba(74,179,216,0.15)", color: "#4ab3d8", fontWeight: 600 }}>{(m.modalidad || "").toUpperCase()}</span>
-                          <span style={{
-                            fontSize: 10, padding: "3px 8px", borderRadius: 20, fontWeight: 700, letterSpacing: 0.5,
-                            background: isFinished ? "rgba(148,163,184,0.15)" : "rgba(52,211,153,0.15)",
-                            color: isFinished ? "#94a3b8" : "#34d399"
-                          }}>
-                            {isFinished ? "FINALIZADO" : "EN CURSO"}
-                          </span>
-                          {!isFinished && m.fecha_fin && (
-                            <>
-                              {diffDays > 0 ? (
-                                <span style={{
-                                  fontSize: 10,
-                                  padding: "3px 8px",
-                                  borderRadius: 20,
-                                  fontWeight: 700,
-                                  background: diffDays <= 7 ? "rgba(245,158,11,0.15)" : "rgba(59,130,246,0.12)",
-                                  color: diffDays <= 7 ? "#fbbf24" : "#60a5fa",
-                                  border: diffDays <= 7 ? "1px solid rgba(245,158,11,0.22)" : "1px solid rgba(59,130,246,0.18)",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 4
-                                }}>
-                                  <Clock size={10} style={{ flexShrink: 0 }} />
-                                  FALTAN {diffDays} {diffDays === 1 ? "DÍA" : "DÍAS"}
-                                </span>
-                              ) : diffDays === 0 ? (
-                                <span style={{
-                                  fontSize: 10,
-                                  padding: "3px 8px",
-                                  borderRadius: 20,
-                                  fontWeight: 700,
-                                  background: "rgba(239,68,68,0.15)",
-                                  color: "#f87171",
-                                  border: "1px solid rgba(239,68,68,0.22)",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 4
-                                }}>
-                                  <Clock size={10} style={{ flexShrink: 0 }} />
-                                  TERMINA HOY
-                                </span>
-                              ) : null}
-                            </>
-                          )}
-                        </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                {Object.entries(flatCoursesByCarrera).map(([carreraName, cursosList]) => (
+                  <div key={carreraName} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "8px 14px",
+                      borderRadius: 10,
+                      background: "rgba(10,22,44,0.6)",
+                      border: "1px solid rgba(42,109,181,0.18)"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <span style={carreraBadgeStyle(carreraName)}>
+                          {carreraName}
+                        </span>
+                        <span style={{ fontSize: 11, color: "rgba(120,160,210,0.7)", fontWeight: 600 }}>
+                          {cursosList.length} {cursosList.length === 1 ? "curso asignado" : "cursos asignados"}
+                        </span>
                       </div>
-
-                      <div>
-                        {m.carreras && (
-                          <div style={{ marginBottom: 6 }}>
-                            <span style={carreraBadgeStyle(m.carreras.nombre)}>
-                              {m.carreras.nombre.toUpperCase()}
-                            </span>
-                          </div>
-                        )}
-                        <div style={{ marginBottom: 4 }}>
-                          <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(42,109,181,0.18)", border: "1px solid rgba(42,109,181,0.3)", color: "rgba(120,160,210,0.9)", fontWeight: 600 }}>
-                            MÓDULO: {(m.nombre || "").toUpperCase()}
-                          </span>
-                          {m.aula && (
-                            <span style={{ fontSize: 10, marginLeft: 6, padding: "2px 6px", borderRadius: 4, background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.25)", color: "#60a5fa", fontWeight: 600 }}>
-                              AULA: {m.aula.toUpperCase()}
-                            </span>
-                          )}
-                        </div>
-                        <h3 style={{ fontSize: 16, fontWeight: 800, color: "#dbeafe", margin: 0, lineHeight: 1.3 }}>{c.nombre.toUpperCase()}</h3>
-                      </div>
-
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "rgba(120,160,210,0.7)", marginTop: "auto", paddingTop: 4 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Calendar size={12} style={{ color: "rgba(74,179,216,0.5)", flexShrink: 0 }} /> {m.fecha_inicio} al {m.fecha_fin}</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}><User size={12} style={{ color: "rgba(74,179,216,0.5)", flexShrink: 0 }} /> Docente: {doc.id ? `${doc.apellidos}, ${doc.nombres}` : "No asignado"}</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Layers size={12} style={{ color: "rgba(74,179,216,0.5)", flexShrink: 0 }} /> Créditos: {c.creditos || 1} CR</div>
-                      </div>
-
-                      <button
-                        className="ts-btn-alumnos"
-                        style={{
-                          ...btnSecondary,
-                          marginTop: 10,
-                          width: "100%",
-                          justifyContent: "center",
-                          padding: "8px 12px",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          borderRadius: 8,
-                          background: "rgba(52,211,153,0.08)",
-                          border: "1px solid rgba(52,211,153,0.18)",
-                          color: "#34d399",
-                          cursor: "pointer",
-                          transition: "all 0.2s"
-                        }}
-                        onClick={() => {
-                          setSelectedModulo(m);
-                          setSelectedCursoId(c.id);
-                        }}
-                      >
-                        VER ALUMNOS DEL CURSO
-                      </button>
-
-                      <ReporteCursoBtn
-                        cursoId={c.id}
-                        moduloId={m.id}
-                        text="DESCARGAR REPORTE"
-                        style={{
-                          marginTop: 8,
-                          width: "100%",
-                          justifyContent: "center",
-                          padding: "8px 12px",
-                          height: "auto",
-                          borderRadius: 8,
-                          background: "rgba(251,191,36,0.08)",
-                          border: "1px solid rgba(251,191,36,0.18)",
-                          color: "#fbbf24",
-                          cursor: "pointer",
-                          transition: "all 0.2s"
-                        }}
-                      />
                     </div>
-                  );
-                })}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(310px,1fr))", gap: 16 }}>
+                      {cursosList.map(c => renderCursoCard(c))}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         )}
 
         {/* Paginación */}
-        {((viewMode === "flat") || (viewMode === "folders" && currentFolder !== null && currentSubFolder !== null)) && totalPages > 1 && (
+        {((viewMode === "flat") || (viewMode === "folders" && currentFolder !== null && currentAulaFolder !== null)) && totalPages > 1 && (
           <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 10 }}>
             <button
               onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
